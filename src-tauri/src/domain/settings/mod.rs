@@ -1,0 +1,12 @@
+//! Settings 键按「系统 / 工具」分模块；KV 仍是一张表。
+
+pub mod ocr;
+pub mod system;
+
+pub use ocr::{
+    engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
+    DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, OCR_ENGINE_KEY_PREFIX,
+    OCR_SETTINGS_VERSION, SETTING_OCR_ACTIVE_ENGINE, SETTING_OCR_INSPECTOR_PLACEMENT,
+    SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
+};
+pub use system::{SETTING_DEBUG_ENABLED, SETTING_UI_THEME};

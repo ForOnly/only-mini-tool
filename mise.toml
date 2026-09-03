@@ -1,0 +1,27 @@
+[tools]
+node = "24"
+rust = "stable"
+
+[tasks.install]
+description = "安装前端依赖"
+run = "npm install"
+
+[tasks.dev]
+description = "启动 Tauri 开发模式"
+run = "npm run tauri dev"
+depends = ["install"]
+
+[tasks.check]
+description = "Rust 编译检查"
+run = "cargo check"
+dir = "src-tauri"
+
+[tasks.build]
+description = "构建生产包"
+run = "npm run tauri build"
+depends = ["install"]
+
+[tasks.gen-types]
+description = "从 Rust domain 导出 TypeScript 类型"
+run = "cargo run --bin export-ts"
+dir = "src-tauri"

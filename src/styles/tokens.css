@@ -1,0 +1,100 @@
+:root {
+  --font-display: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+  --font-sans: var(--font-body);
+  --font-weight-display: 700;
+  --font-weight-title: 600;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-md: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.35rem;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --header-height: 48px;
+  --header-height-tool: 32px;
+  --toolbar-height: 48px;
+  --inspector-width: 320px;
+  --launcher-icon-size: 44px;
+  --launcher-card-min: 100px;
+  --launcher-card-max: 116px;
+  --launcher-gap: 12px;
+
+  --accent: #0d9488;
+  --accent-hover: #0f766e;
+  --on-accent: #ffffff;
+  --danger: #dc2626;
+  --warning: #d97706;
+  --status-running: #16a34a;
+  --status-stopped: color-mix(in srgb, #dc2626 55%, #64748b);
+  --ocr-box: #22c55e;
+  --ocr-box-hover: #ef4444;
+  --focus-ring: #14b8a6;
+
+  --radius: 8px;
+  --motion-fast: 120ms ease;
+  --motion-normal: 160ms ease;
+  --transition: var(--motion-normal);
+
+  --shadow-panel: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+  --shadow-menu: 0 4px 16px color-mix(in srgb, #000 18%, transparent);
+  --shadow-message: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+
+  --z-toast: 9000;
+  --z-message: 9000;
+  --z-banner: 50;
+
+  /* 默认浅色；无 data-scheme 时由 media 回退覆盖 */
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #cbd5e1;
+}
+
+html[data-scheme="light"] {
+  --bg: #f1f5f9;
+  --surface: #ffffff;
+  --surface-2: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --border: #cbd5e1;
+}
+
+html[data-scheme="dark"] {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #334155;
+  --text: #f1f5f9;
+  --text-muted: #94a3b8;
+  --border: #475569;
+  --warning: #fbbf24;
+  --shadow-panel: 0 8px 24px color-mix(in srgb, #000 40%, transparent);
+  --shadow-menu: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
+  --shadow-message: 0 10px 28px color-mix(in srgb, #000 45%, transparent);
+}
+
+/* 无 data-scheme 时回退到系统偏好 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-scheme]) {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border: #475569;
+    --warning: #fbbf24;
+    --shadow-panel: 0 8px 24px color-mix(in srgb, #000 40%, transparent);
+    --shadow-menu: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
+    --shadow-message: 0 10px 28px color-mix(in srgb, #000 45%, transparent);
+  }
+}

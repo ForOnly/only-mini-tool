@@ -1,0 +1,40 @@
+[package]
+name = "only-mini-tool"
+version = "0.1.0"
+description = "Desktop toolbox — OCR first"
+authors = ["you"]
+edition = "2021"
+default-run = "only-mini-tool"
+
+[lib]
+name = "only_mini_tool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools", "protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+ts-rs = { version = "10", features = ["serde-compat"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["time", "rt", "macros"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
+base64 = "0.22"
+arboard = "3"
+uuid = { version = "1", features = ["v4"] }
+
+[[bin]]
+name = "export-ts"
+path = "src/bin/export_ts.rs"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
+clipboard-win = "5"
