@@ -141,19 +141,28 @@ function gitPorcelain() {
 function createReleaseCommitAndTag(version) {
   const dirty = gitPorcelain();
   if (dirty) {
-    // 允许仅包含我们即将提交的四个文件；若还有其它脏文件则拒绝
+    // 允许仅包含我们即将提交的版本相关文件；若还有其它脏文件则拒绝
     const lines = dirty.split(/\r?\n/).filter(Boolean);
     const allowed = new Set([
       "package.json",
       "package-lock.json",
       "src-tauri/tauri.conf.json",
       "src-tauri/Cargo.toml",
+      "src-tauri/Cargo.lock",
     ]);
     const extra = lines.filter((line) => {
-      // porcelain: XY PATH 或 rename「R  old -> new」；兼容 \r 与前置空格
-      const m = line.match(/^.. (.+)$/);
-      const path = (m ? m[1] : line.slice(3)).replace(/\\/g, "/").trim();
-      const normalized = path.includes(" -> ") ? path.split(" -> ").pop().trim() : path;
+      // porcelain: 固定两列状态 + 空格 + path（rename 为 old -> new）
+      let path;
+      if (line.length >= 3 && line[2] === " ") {
+        path = line.slice(3);
+      } else {
+        const m = line.match(/^..\s+(.*)$/) || line.match(/^\S\s+(.*)$/);
+        path = m ? m[1] : line;
+      }
+      const normalized = path
+        .replace(/\\/g, "/")
+        .trim()
+        .replace(/^.* -> /, "");
       return !allowed.has(normalized);
     });
     if (extra.length > 0) {
@@ -168,6 +177,7 @@ function createReleaseCommitAndTag(version) {
     "package-lock.json",
     "src-tauri/tauri.conf.json",
     "src-tauri/Cargo.toml",
+    "src-tauri/Cargo.lock",
   ];
   execFileSync("git", ["add", ...files], { cwd: root, stdio: "inherit" });
   const staged = execSync("git diff --cached --name-only", {
