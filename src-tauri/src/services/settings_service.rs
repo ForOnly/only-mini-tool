@@ -7,13 +7,13 @@ use crate::domain::{
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
 use crate::repository::settings::SettingsRepo;
-use crate::services::ocr::OcrRegistry;
+use crate::services::ocr::{wipe_engine_secrets_on_schema_reset, OcrRegistry};
 
 pub struct SettingsService;
 
 impl SettingsService {
     pub fn ensure_defaults(db: &Database) -> Result<(), AppError> {
-        db.with_conn(|conn| {
+        let wiped_ocr = db.with_conn(|conn| {
             if SettingsRepo::get(conn, SETTING_UI_THEME)?.is_none() {
                 SettingsRepo::set(conn, SETTING_UI_THEME, UiTheme::System.as_str())?;
             }
@@ -44,7 +44,9 @@ impl SettingsService {
                     SETTING_OCR_INSPECTOR_PLACEMENT,
                     DEFAULT_OCR_INSPECTOR_PLACEMENT,
                 )?;
-            } else if SettingsRepo::get(conn, SETTING_OCR_INSPECTOR_PLACEMENT)?.is_none() {
+                return Ok(true);
+            }
+            if SettingsRepo::get(conn, SETTING_OCR_INSPECTOR_PLACEMENT)?.is_none() {
                 // 旧库缺键时补默认，不 wipe
                 SettingsRepo::set(
                     conn,
@@ -53,8 +55,14 @@ impl SettingsService {
                 )?;
             }
 
-            Ok(())
-        })
+            Ok(false)
+        })?;
+
+        // schema 升级须同步清 keyring，避免旧密钥仍可用于识别
+        if wiped_ocr {
+            wipe_engine_secrets_on_schema_reset()?;
+        }
+        Ok(())
     }
 
     pub fn get(db: &Database, key: &str) -> Result<Option<String>, AppError> {

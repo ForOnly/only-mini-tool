@@ -25,11 +25,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 async-trait = "0.1"
-tokio = { version = "1", features = ["time", "rt", "macros"] }
+tokio = { version = "1", features = ["time", "rt", "macros", "sync"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp"] }
 base64 = "0.22"
 arboard = "3"
 uuid = { version = "1", features = ["v4"] }
+keyring = { version = "3", features = ["windows-native"] }
 
 [[bin]]
 name = "export-ts"

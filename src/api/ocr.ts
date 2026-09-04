@@ -6,6 +6,10 @@ export function recognizeImage(path: string): Promise<OcrResult> {
   return invoke<OcrResult>("recognize_image", { path });
 }
 
+export function cancelRecognize(): Promise<void> {
+  return invoke("cancel_recognize");
+}
+
 export function stageImageFile(path: string): Promise<string> {
   return invoke<string>("stage_image_file", { path });
 }

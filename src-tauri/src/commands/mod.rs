@@ -88,6 +88,12 @@ pub async fn recognize_image(
 }
 
 #[tauri::command]
+pub fn cancel_recognize() -> Result<(), AppError> {
+    OcrService::cancel_recognize();
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_ocr_settings(state: State<'_, AppState>) -> Result<OcrSettingsBundle, AppError> {
     OcrService::get_settings(&state.db)
 }

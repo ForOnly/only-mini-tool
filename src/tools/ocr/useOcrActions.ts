@@ -4,7 +4,14 @@ import { useI18n } from "vue-i18n";
 import type { ContextMenuItem } from "@/components/common/contextMenuTypes";
 import { useOcr } from "@/tools/ocr/useOcr";
 
-export type OcrActionId = "open" | "paste" | "toggleBoxes" | "rotate" | "clear" | "retry";
+export type OcrActionId =
+  | "open"
+  | "paste"
+  | "toggleBoxes"
+  | "rotate"
+  | "clear"
+  | "retry"
+  | "cancel";
 
 /** OCR 画布右键 / ⋯ 共用动作表。 */
 export function useOcrActions() {
@@ -20,6 +27,7 @@ export function useOcrActions() {
     rotateClockwise,
     clear,
     runRecognize,
+    cancelInFlight,
   } = useOcr();
 
   const items = computed<ContextMenuItem[]>(() => {
@@ -43,6 +51,13 @@ export function useOcrActions() {
         danger: true,
       },
     ];
+    if (busy.value) {
+      list.push({
+        id: "cancel",
+        label: t("ocr.cancel"),
+        danger: true,
+      });
+    }
     if (lastError.value && hasImage.value) {
       list.push({
         id: "retry",
@@ -69,6 +84,9 @@ export function useOcrActions() {
         break;
       case "clear":
         await clear();
+        break;
+      case "cancel":
+        await cancelInFlight();
         break;
       case "retry":
         await runRecognize();

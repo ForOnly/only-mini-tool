@@ -1,13 +1,14 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 use std::time::Duration;
 
 use tauri::AppHandle;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 use tokio::time::timeout;
 
 use crate::domain::{
-    engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
+    engine_setting_key, parse_inspector_placement, OcrFieldKind, DEFAULT_OCR_ACTIVE_ENGINE,
     DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, OcrEngineFieldInfo, OcrEngineInfo,
     OcrResult, OcrSettingsBundle, OcrSettingsSave, SETTING_OCR_ACTIVE_ENGINE,
     SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_TIMEOUT_MS,
@@ -16,13 +17,25 @@ use crate::errors::AppError;
 use crate::infrastructure::database::Database;
 use crate::services::settings_service::SettingsService;
 
+use super::engines::baidu;
 use super::registry::OcrRegistry;
+use super::secrets::{read_engine_field, write_engine_field};
 use super::temp;
 
-/// 进程内识别单飞：并发二次 invoke 返回 `ocr.busy`。
-fn recognize_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+/// 识别单飞 + 可取消。
+struct RecognizeGate {
+    lock: Mutex<()>,
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+fn recognize_gate() -> &'static RecognizeGate {
+    static GATE: OnceLock<RecognizeGate> = OnceLock::new();
+    GATE.get_or_init(|| RecognizeGate {
+        lock: Mutex::new(()),
+        cancelled: AtomicBool::new(false),
+        notify: Notify::new(),
+    })
 }
 
 pub struct OcrService;
@@ -43,8 +56,16 @@ impl OcrService {
         Ok(id.to_string())
     }
 
+    /// 取消进行中的识别（无任务时为 no-op）。
+    pub fn cancel_recognize() {
+        let gate = recognize_gate();
+        gate.cancelled.store(true, Ordering::SeqCst);
+        gate.notify.notify_waiters();
+    }
+
     pub async fn recognize(db: &Database, path: &str) -> Result<OcrResult, AppError> {
-        let _guard = match recognize_lock().try_lock() {
+        let gate = recognize_gate();
+        let _guard = match gate.lock.try_lock() {
             Ok(guard) => guard,
             Err(_) => {
                 return Err(AppError::OcrBusy {
@@ -52,6 +73,8 @@ impl OcrService {
                 });
             }
         };
+
+        gate.cancelled.store(false, Ordering::SeqCst);
 
         let active_id = Self::active_engine_id(db)?;
         let registry = OcrRegistry::global();
@@ -68,12 +91,29 @@ impl OcrService {
 
         let engine = registry.engine(&active_id)?;
         let fut = engine.recognize(&bytes, &cfg);
+        let timed = timeout(Duration::from_millis(timeout_ms), fut);
 
-        match timeout(Duration::from_millis(timeout_ms), fut).await {
-            Ok(result) => result,
-            Err(_) => Err(AppError::OcrTimeout {
-                message: format!("OCR timed out after {timeout_ms}ms"),
-            }),
+        tokio::select! {
+            _ = async {
+                loop {
+                    if gate.cancelled.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    gate.notify.notified().await;
+                }
+            } => {
+                Err(AppError::OcrCancelled {
+                    message: "OCR recognition cancelled".into(),
+                })
+            }
+            result = timed => {
+                match result {
+                    Ok(inner) => inner,
+                    Err(_) => Err(AppError::OcrTimeout {
+                        message: format!("OCR timed out after {timeout_ms}ms"),
+                    }),
+                }
+            }
         }
     }
 
@@ -112,7 +152,7 @@ impl OcrService {
             let mut fields = Vec::new();
             for field in spec.fields {
                 let setting_key = engine_setting_key(spec.id, field.name);
-                let val = SettingsService::get(db, &setting_key)?.unwrap_or_default();
+                let val = read_engine_field(db, &setting_key, field.kind)?;
                 values.insert(setting_key.clone(), val);
                 fields.push(OcrEngineFieldInfo {
                     name: field.name.to_string(),
@@ -166,10 +206,10 @@ impl OcrService {
 
         let engine = registry.engine(active)?;
         let spec = engine.spec();
-        let allowed: HashMap<&str, ()> = spec
+        let allowed: HashMap<&str, OcrFieldKind> = spec
             .fields
             .iter()
-            .map(|f| (f.name, ()))
+            .map(|f| (f.name, f.kind))
             .collect();
 
         for key in payload.values.keys() {
@@ -196,7 +236,12 @@ impl OcrService {
                 .get(&key)
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
-            SettingsService::set_raw(db, &key, &val)?;
+            write_engine_field(db, &key, field.kind, &val)?;
+        }
+
+        // 百度密钥变更后丢弃进程内 token 缓存
+        if active == "baidu" {
+            baidu::invalidate_token_cache();
         }
         Ok(())
     }

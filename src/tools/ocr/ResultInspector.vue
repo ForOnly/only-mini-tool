@@ -5,7 +5,6 @@ import { useI18n } from "vue-i18n";
 import AppButton from "@/components/common/AppButton.vue";
 import AppPanel from "@/components/common/AppPanel.vue";
 import { useMessage } from "@/composables/useMessage";
-import { copyTextToClipboard } from "@/tools/ocr/copyText";
 import { useInspectorSize } from "@/tools/ocr/useInspectorSize";
 import { useOcr } from "@/tools/ocr/useOcr";
 import { useOcrSettings } from "@/tools/ocr/useOcrSettings";
@@ -27,15 +26,18 @@ const {
   busy,
   lastError,
   runRecognize,
+  cancelInFlight,
   revealSeq,
   revealIndex,
+  copyLog,
+  copyText: copyAndLog,
 } = useOcr();
 const { inspectorPlacement } = useOcrSettings();
 const { widthPx, heightPx, setWidth, setHeight } = useInspectorSize();
 
 const open = ref(true);
-/** 全文 / 词条互斥 Tab，默认词条便于高亮联动。 */
-const resultTab = ref<"full" | "words">("words");
+/** 词条 / 全文 / 复制日志 */
+const resultTab = ref<"full" | "words" | "log">("words");
 const listEl = ref<HTMLElement | null>(null);
 const rootEl = ref<HTMLElement | null>(null);
 
@@ -66,6 +68,7 @@ const emptyHint = computed(() => {
 });
 
 const showRetry = computed(() => !!lastError.value && hasImage.value && !busy.value);
+const showCancel = computed(() => busy.value);
 
 const expandGlyph = computed(() => {
   switch (inspectorPlacement.value) {
@@ -81,6 +84,18 @@ const expandGlyph = computed(() => {
 const resizeCursor = computed(() =>
   inspectorPlacement.value === "bottom" ? "row-resize" : "col-resize",
 );
+
+function formatLogTime(at: number): string {
+  try {
+    return new Date(at).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
 
 function toggle() {
   open.value = !open.value;
@@ -99,7 +114,7 @@ async function copyText(text: string) {
     return;
   }
   try {
-    await copyTextToClipboard(text);
+    await copyAndLog(text);
     success(t("ocr.copied"));
   } catch {
     error(t("ocr.copyFailed"));
@@ -114,7 +129,6 @@ watch(revealSeq, async () => {
   if (index === null) {
     return;
   }
-  // 保证词条面板可见后再滚动
   if (resultTab.value !== "words") {
     resultTab.value = "words";
   }
@@ -221,6 +235,9 @@ function onResizePointerDown(event: PointerEvent) {
             </span>
           </div>
           <div class="head-actions">
+            <AppButton v-if="showCancel" variant="ghost" @click="cancelInFlight">
+              {{ t("ocr.cancel") }}
+            </AppButton>
             <AppButton v-if="showRetry" variant="ghost" @click="runRecognize">
               {{ t("ocr.retry") }}
             </AppButton>
@@ -235,33 +252,61 @@ function onResizePointerDown(event: PointerEvent) {
       </template>
 
       <div class="content">
-        <p v-if="!hasImage || words.length === 0" class="empty">
-          {{ emptyHint }}
-        </p>
-        <template v-else>
-          <div class="tabs" role="tablist">
-            <button
-              type="button"
-              class="tab"
-              role="tab"
-              :aria-selected="resultTab === 'words'"
-              :class="{ active: resultTab === 'words' }"
-              @click="resultTab = 'words'"
-            >
-              {{ t("ocr.wordList") }}
-            </button>
-            <button
-              type="button"
-              class="tab"
-              role="tab"
-              :aria-selected="resultTab === 'full'"
-              :class="{ active: resultTab === 'full' }"
-              @click="resultTab = 'full'"
-            >
-              {{ t("ocr.fullText") }}
-            </button>
-          </div>
+        <div class="tabs" role="tablist">
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            :aria-selected="resultTab === 'words'"
+            :class="{ active: resultTab === 'words' }"
+            @click="resultTab = 'words'"
+          >
+            {{ t("ocr.wordList") }}
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            :aria-selected="resultTab === 'full'"
+            :class="{ active: resultTab === 'full' }"
+            @click="resultTab = 'full'"
+          >
+            {{ t("ocr.fullText") }}
+          </button>
+          <button
+            type="button"
+            class="tab"
+            role="tab"
+            :aria-selected="resultTab === 'log'"
+            :class="{ active: resultTab === 'log' }"
+            @click="resultTab = 'log'"
+          >
+            {{ t("ocr.copyLog") }}
+          </button>
+        </div>
 
+        <template v-if="resultTab === 'log'">
+          <section class="list" role="tabpanel">
+            <p v-if="copyLog.length === 0" class="empty">{{ t("ocr.copyLogEmpty") }}</p>
+            <ul v-else>
+              <li v-for="entry in copyLog" :key="entry.id">
+                <div class="log-main">
+                  <span class="log-time">{{ formatLogTime(entry.at) }}</span>
+                  <button type="button" class="word" @dblclick="copyText(entry.text)">
+                    {{ entry.text }}
+                  </button>
+                </div>
+                <AppButton variant="ghost" @click="copyText(entry.text)">
+                  {{ t("ocr.copy") }}
+                </AppButton>
+              </li>
+            </ul>
+          </section>
+        </template>
+        <template v-else-if="!hasImage || words.length === 0">
+          <p class="empty">{{ emptyHint }}</p>
+        </template>
+        <template v-else>
           <section v-if="resultTab === 'full'" class="full" role="tabpanel">
             <pre class="full-text">{{ fullText }}</pre>
           </section>
@@ -321,7 +366,6 @@ function onResizePointerDown(event: PointerEvent) {
   border-top: 1px solid var(--border);
 }
 
-/* 收起：仅箭头按钮，无整条空轨 */
 .inspector.collapsed {
   width: auto;
   height: auto;
@@ -577,6 +621,20 @@ li:hover {
 li.active {
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
   border-left-color: var(--accent);
+}
+
+.log-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-time {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .word {

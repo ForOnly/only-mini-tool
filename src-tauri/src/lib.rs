@@ -44,6 +44,7 @@ pub fn run() {
             commands::open_logs_dir,
             commands::open_devtools,
             commands::recognize_image,
+            commands::cancel_recognize,
             commands::get_ocr_settings,
             commands::save_ocr_settings,
             commands::stage_image_file,

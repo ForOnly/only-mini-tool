@@ -8,7 +8,6 @@ import AppEmpty from "@/components/common/AppEmpty.vue";
 import { useMessage } from "@/composables/useMessage";
 import { useWorkbench } from "@/composables/useWorkbench";
 import OcrBox from "@/tools/ocr/OcrBox.vue";
-import { copyTextToClipboard } from "@/tools/ocr/copyText";
 import { useOcr } from "@/tools/ocr/useOcr";
 import { useOcrActions } from "@/tools/ocr/useOcrActions";
 
@@ -45,6 +44,7 @@ const {
   setImageSize,
   openFile,
   pasteImage,
+  copyText,
 } = useOcr();
 
 const { items: actionItems, run: runAction } = useOcrActions();
@@ -150,7 +150,7 @@ async function copyWord(index: number) {
   }
   revealWord(index);
   try {
-    await copyTextToClipboard(word.text);
+    await copyText(word.text);
     success(t("ocr.copied"));
   } catch {
     error(t("ocr.copyFailed"));

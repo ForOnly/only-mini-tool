@@ -2,6 +2,10 @@ export default {
   app: {
     name: "only-mini-tool",
   },
+  common: {
+    confirm: "Confirm",
+    cancel: "Cancel",
+  },
   shell: {
     backHome: "Back to launcher",
     moreActions: "More actions",
@@ -15,12 +19,18 @@ export default {
     open: "Open",
     configure: "Configure",
     close: "Close",
+    cancel: "Cancel",
     running: "Running",
     stopped: "Stopped",
+    closeConfirmTitle: "Close this tool?",
+    closeConfirmMessage:
+      "Closing discards this tool’s session. The next open starts clean.",
   },
   tools: {
     ocr: "OCR",
     ocrDesc: "Extract text from screenshots and photos",
+    codec: "Codec",
+    codecDesc: "JSON / Base64 / URL / hash text transforms for developers",
   },
   settings: {
     title: "Settings",
@@ -39,6 +49,8 @@ export default {
     logsClear: "Clear",
     logsEmpty: "(no logs yet)",
     ocrSection: "OCR engine",
+    ocrKeyringHint:
+      "Engine secrets are stored in the OS credential store (Windows Credential Manager), not as plaintext in the local database.",
     ocrEngine: "Active engine",
     ocrEngine_baidu: "Baidu handwriting",
     ocrEngine_paddle: "PaddleOCR official API",
@@ -63,6 +75,7 @@ export default {
     paste: "Paste image",
     rotate: "Rotate",
     clear: "Clear",
+    cancel: "Cancel",
     hideBoxes: "Hide boxes",
     showBoxes: "Show boxes",
     retry: "Retry",
@@ -77,6 +90,8 @@ export default {
     copyAll: "Copy all",
     fullText: "Full text",
     wordList: "Words",
+    copyLog: "Copy log",
+    copyLogEmpty: "Nothing copied yet.",
     inspectorTitle: "Results",
     inspectorEmpty: "Words and full text will appear here after recognition.",
     inspectorBusy: "Recognizing…",
@@ -85,7 +100,7 @@ export default {
     inspectorCollapse: "Collapse",
     inspectorExpand: "Expand results",
     inspectorResize: "Drag to resize results panel",
-    busyBlocked: "Recognition in progress — wait or clear first",
+    busyBlocked: "Recognition in progress — wait, cancel, or clear first",
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
     zoomFit: "Fit to window",
@@ -101,6 +116,7 @@ export default {
       clipboard_empty: "No image in the clipboard",
       image_too_large: "Image too large (8MB max) — compress and retry",
       busy: "Recognition already in progress — try again later",
+      cancelled: "Recognition cancelled",
     },
     not_found: "Not found",
     validation_error: "Invalid input",

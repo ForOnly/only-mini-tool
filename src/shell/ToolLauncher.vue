@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
+import AppConfirm from "@/components/common/AppConfirm.vue";
 import AppContextMenu from "@/components/common/AppContextMenu.vue";
 import type { ContextMenuItem } from "@/components/common/contextMenuTypes";
 import ToolCard from "@/components/common/ToolCard.vue";
@@ -22,6 +23,7 @@ const {
 const menuId = ref<string | null>(null);
 const menuX = ref(0);
 const menuY = ref(0);
+const confirmCloseId = ref<string | null>(null);
 
 const menuOpen = computed(() => menuId.value !== null);
 
@@ -47,6 +49,9 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     },
   ];
 });
+
+const confirmCloseTitle = computed(() => t("launcher.closeConfirmTitle"));
+const confirmCloseMessage = computed(() => t("launcher.closeConfirmMessage"));
 
 function openMenuForCard(id: string, event: MouseEvent) {
   if (menuId.value === id) {
@@ -84,16 +89,49 @@ async function onMenuSelect(actionId: string) {
     return;
   }
   if (actionId === "close") {
-    await closeTool(id);
+    confirmCloseId.value = id;
   }
 }
+
+async function confirmClose() {
+  const id = confirmCloseId.value;
+  confirmCloseId.value = null;
+  if (!id) {
+    return;
+  }
+  await closeTool(id);
+}
+
+function cancelClose() {
+  confirmCloseId.value = null;
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && menuId.value) {
+    event.preventDefault();
+    closeMenu();
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("keydown", onKeydown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
   <div class="launcher">
     <div class="grid-wrap">
-      <div class="grid">
-        <div v-for="tool in tools" :key="tool.id" class="card-wrap">
+      <div class="grid" role="list">
+        <div
+          v-for="tool in tools"
+          :key="tool.id"
+          class="card-wrap"
+          role="listitem"
+        >
           <ToolCard
             :title="t(tool.labelKey)"
             :description="tool.descriptionKey ? t(tool.descriptionKey) : undefined"
@@ -113,6 +151,17 @@ async function onMenuSelect(actionId: string) {
       :items="menuItems"
       @close="closeMenu"
       @select="onMenuSelect"
+    />
+
+    <AppConfirm
+      :open="!!confirmCloseId"
+      :title="confirmCloseTitle"
+      :message="confirmCloseMessage"
+      :confirm-label="t('launcher.close')"
+      :cancel-label="t('launcher.cancel')"
+      danger
+      @confirm="confirmClose"
+      @cancel="cancelClose"
     />
   </div>
 </template>

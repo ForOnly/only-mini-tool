@@ -3,6 +3,7 @@ import { computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
+import AppInput from "@/components/common/AppInput.vue";
 import { useMessage } from "@/composables/useMessage";
 import { useOcrSettings } from "@/tools/ocr/useOcrSettings";
 import { formatAppError } from "@/utils/error";
@@ -39,7 +40,7 @@ function labelForField(name: string): string {
   return te(key) ? t(key) : name;
 }
 
-function inputType(kind: string): string {
+function inputType(kind: string): "text" | "password" | "url" {
   if (kind === "password") return "password";
   if (kind === "url") return "url";
   return "text";
@@ -62,6 +63,7 @@ async function onSave() {
 <template>
   <section class="section">
     <h2>{{ t("settings.ocrSection") }}</h2>
+    <p class="hint">{{ t("settings.ocrKeyringHint") }}</p>
     <label class="field">
       <span>{{ t("settings.ocrEngine") }}</span>
       <select v-model="activeEngine">
@@ -76,17 +78,16 @@ async function onSave() {
         {{ labelForField(field.name) }}
         <template v-if="!field.required">（{{ t("settings.ocrFieldOptional") }}）</template>
       </span>
-      <input
+      <AppInput
         v-model="values[field.settingKey]"
         :type="inputType(field.kind)"
-        autocomplete="off"
         :placeholder="field.name === 'model' ? 'PP-OCRv5' : undefined"
       />
     </label>
 
     <label class="field">
       <span>{{ t("settings.ocrTimeout") }}</span>
-      <input v-model="timeoutMs" type="number" min="1" step="1000" />
+      <AppInput v-model="timeoutMs" type="number" :min="1" :step="1000" />
     </label>
     <label class="field">
       <span>{{ t("settings.ocrInspectorPlacement") }}</span>
@@ -110,10 +111,17 @@ async function onSave() {
 }
 
 h2 {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-2);
   font-size: var(--text-base);
   font-weight: var(--font-weight-title);
   color: var(--text);
+}
+
+.hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 .field {
@@ -123,10 +131,6 @@ h2 {
   margin-bottom: var(--space-4);
 }
 
-input[type="password"],
-input[type="number"],
-input[type="url"],
-input[type="text"],
 select {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius);

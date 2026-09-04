@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { computed, ref } from "vue";
 
 import {
+  cancelRecognize,
   clearOcrTemp,
   recognizeImage,
   rotateImageOrientation,
@@ -13,8 +14,14 @@ import {
 import type { OcrResult } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { i18n } from "@/i18n";
-import { extFromImageBlob } from "@/tools/ocr/copyText";
-import { formatAppError } from "@/utils/error";
+import { copyTextToClipboard, extFromImageBlob } from "@/tools/ocr/copyText";
+import { formatAppError, getErrorCode } from "@/utils/error";
+
+export type CopyLogEntry = {
+  id: string;
+  text: string;
+  at: number;
+};
 
 const imagePath = ref<string | null>(null);
 const imageUrl = ref<string | null>(null);
@@ -31,14 +38,17 @@ const imageNaturalHeight = ref(0);
 /** 画布双击等主动定位列表项（与 hover 高亮分离）。 */
 const revealIndex = ref<number | null>(null);
 const revealSeq = ref(0);
+/** 本会话复制历史（换图 / 清除时清空）。 */
+const copyLog = ref<CopyLogEntry[]>([]);
 
-/** 关闭/清除时递增，丢弃进行中的识别写回。 */
+/** 关闭/清除/取消时递增，丢弃进行中的识别写回。 */
 let sessionGen = 0;
 
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
 /** 粘贴/字节入库上限（与后端 stage_image_bytes 一致）。 */
 const MAX_STAGE_BYTES = 8 * 1024 * 1024;
+const COPY_LOG_MAX = 50;
 
 function tr(key: string): string {
   return String(i18n.global.t(key));
@@ -65,6 +75,19 @@ function revokeDisplayUrl(url: string | null) {
 function setDisplayUrl(next: string) {
   revokeDisplayUrl(imageUrl.value);
   imageUrl.value = next;
+}
+
+function clearCopyLog() {
+  copyLog.value = [];
+}
+
+function appendCopyLog(text: string) {
+  const entry: CopyLogEntry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    text,
+    at: Date.now(),
+  };
+  copyLog.value = [entry, ...copyLog.value].slice(0, COPY_LOG_MAX);
 }
 
 export function useOcr() {
@@ -154,6 +177,7 @@ export function useOcr() {
     result.value = null;
     highlightIndex.value = null;
     lastError.value = null;
+    clearCopyLog();
     resetView();
     if (autoRecognize) {
       await runRecognize();
@@ -177,12 +201,30 @@ export function useOcr() {
       if (stale(gen)) {
         return;
       }
+      if (getErrorCode(error) === "ocr.cancelled") {
+        return;
+      }
       lastError.value = errMsg(error);
       result.value = null;
     } finally {
       if (!stale(gen)) {
         busy.value = false;
       }
+    }
+  }
+
+  /** 硬取消后端识别并丢弃写回。 */
+  async function cancelInFlight() {
+    if (!busy.value) {
+      return;
+    }
+    sessionGen += 1;
+    busy.value = false;
+    lastError.value = null;
+    try {
+      await cancelRecognize();
+    } catch {
+      /* ignore */
     }
   }
 
@@ -287,6 +329,7 @@ export function useOcr() {
       setDisplayUrl(convertFileSrc(next));
       result.value = null;
       highlightIndex.value = null;
+      clearCopyLog();
       resetView();
       busy.value = false;
       await runRecognize();
@@ -303,6 +346,15 @@ export function useOcr() {
     boxesVisible.value = !boxesVisible.value;
   }
 
+  async function copyText(text: string): Promise<boolean> {
+    if (!text) {
+      return false;
+    }
+    await copyTextToClipboard(text);
+    appendCopyLog(text);
+    return true;
+  }
+
   async function resetSession() {
     sessionGen += 1;
     busy.value = false;
@@ -312,10 +364,16 @@ export function useOcr() {
     result.value = null;
     highlightIndex.value = null;
     lastError.value = null;
+    clearCopyLog();
     resetView();
     imageNaturalWidth.value = 0;
     imageNaturalHeight.value = 0;
     useMessage().dismissByKey("ocr.lastError");
+    try {
+      await cancelRecognize();
+    } catch {
+      /* ignore */
+    }
     try {
       await clearOcrTemp();
     } catch {
@@ -342,6 +400,7 @@ export function useOcr() {
     imageNaturalHeight,
     revealIndex,
     revealSeq,
+    copyLog,
     hasImage,
     words,
     fullText,
@@ -364,5 +423,7 @@ export function useOcr() {
     clear,
     resetSession,
     runRecognize,
+    cancelInFlight,
+    copyText,
   };
 }

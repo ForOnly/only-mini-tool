@@ -1,6 +1,6 @@
 //! 内置 OCR 引擎实现。
 
-mod baidu;
+pub mod baidu;
 mod paddle;
 
 use super::config::OcrEngine;

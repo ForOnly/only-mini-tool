@@ -5,10 +5,10 @@ use std::sync::OnceLock;
 use crate::domain::engine_setting_key;
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
-use crate::services::settings_service::SettingsService;
 
 use super::config::{EngineConfig, EngineSpec, OcrEngine};
 use super::engines;
+use super::secrets::read_engine_field;
 
 static REGISTRY: OnceLock<OcrRegistry> = OnceLock::new();
 
@@ -47,7 +47,7 @@ impl OcrRegistry {
         let mut values = std::collections::HashMap::new();
         for field in spec.fields {
             let key = engine_setting_key(spec.id, field.name);
-            let val = SettingsService::get(db, &key)?.unwrap_or_default();
+            let val = read_engine_field(db, &key, field.kind)?;
             values.insert(field.name.to_string(), val);
         }
         Ok(EngineConfig { values })
