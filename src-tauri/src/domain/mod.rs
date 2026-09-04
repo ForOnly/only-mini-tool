@@ -19,12 +19,12 @@ impl UiTheme {
         }
     }
 
-    pub fn parse(value: &str) -> Result<Self, ()> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
-            "system" => Ok(Self::System),
-            "light" => Ok(Self::Light),
-            "dark" => Ok(Self::Dark),
-            _ => Err(()),
+            "system" => Some(Self::System),
+            "light" => Some(Self::Light),
+            "dark" => Some(Self::Dark),
+            _ => None,
         }
     }
 

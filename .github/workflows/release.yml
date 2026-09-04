@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Check version sync
+        run: npm run check:version
+
+      - name: Resolve release tag
+        id: meta
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/*") {
+            $tag = "${{ github.ref_name }}"
+            if (-not $tag.StartsWith("v")) {
+              Write-Error "Tag must start with v: $tag"
+              exit 1
+            }
+            $expected = $tag.Substring(1)
+            $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+            if ($pkg -ne $expected) {
+              Write-Error "Tag $tag does not match package.json version $pkg"
+              exit 1
+            }
+            Write-Host "Tag $tag matches package.json $pkg"
+            "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+            $tag = "v$pkg"
+            Write-Host "workflow_dispatch: using package.json → $tag"
+            "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Build and draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ steps.meta.outputs.tag }}
+          releaseName: ${{ steps.meta.outputs.tag }}
+          releaseDraft: true
+          prerelease: false
+          args: --bundles nsis,msi

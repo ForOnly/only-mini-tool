@@ -8,9 +8,9 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::timeout;
 
 use crate::domain::{
-    engine_setting_key, parse_inspector_placement, OcrFieldKind, DEFAULT_OCR_ACTIVE_ENGINE,
-    DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, OcrEngineFieldInfo, OcrEngineInfo,
-    OcrResult, OcrSettingsBundle, OcrSettingsSave, SETTING_OCR_ACTIVE_ENGINE,
+    engine_setting_key, parse_inspector_placement, OcrEngineFieldInfo, OcrEngineInfo, OcrFieldKind,
+    OcrResult, OcrSettingsBundle, OcrSettingsSave, DEFAULT_OCR_ACTIVE_ENGINE,
+    DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, SETTING_OCR_ACTIVE_ENGINE,
     SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_TIMEOUT_MS,
 };
 use crate::errors::AppError;
@@ -195,22 +195,20 @@ impl OcrService {
             });
         }
 
-        let placement = parse_inspector_placement(&payload.inspector_placement).map_err(|_| {
-            AppError::ValidationError {
-                message: format!(
-                    "invalid ocr.inspector_placement: {}",
-                    payload.inspector_placement
-                ),
-            }
-        })?;
+        let placement =
+            parse_inspector_placement(&payload.inspector_placement).ok_or_else(|| {
+                AppError::ValidationError {
+                    message: format!(
+                        "invalid ocr.inspector_placement: {}",
+                        payload.inspector_placement
+                    ),
+                }
+            })?;
 
         let engine = registry.engine(active)?;
         let spec = engine.spec();
-        let allowed: HashMap<&str, OcrFieldKind> = spec
-            .fields
-            .iter()
-            .map(|f| (f.name, f.kind))
-            .collect();
+        let allowed: HashMap<&str, OcrFieldKind> =
+            spec.fields.iter().map(|f| (f.name, f.kind)).collect();
 
         for key in payload.values.keys() {
             let prefix = format!("ocr.engine.{active}.");

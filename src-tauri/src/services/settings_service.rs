@@ -1,8 +1,8 @@
 use crate::domain::{
-    UiTheme, DEFAULT_OCR_ACTIVE_ENGINE, DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS,
-    OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE,
-    SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
-    SETTING_UI_THEME, parse_inspector_placement,
+    parse_inspector_placement, UiTheme, DEFAULT_OCR_ACTIVE_ENGINE, DEFAULT_OCR_INSPECTOR_PLACEMENT,
+    DEFAULT_OCR_TIMEOUT_MS, OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED,
+    SETTING_OCR_ACTIVE_ENGINE, SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION,
+    SETTING_OCR_TIMEOUT_MS, SETTING_UI_THEME,
 };
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
@@ -22,9 +22,7 @@ impl SettingsService {
             }
 
             let version_raw = SettingsRepo::get(conn, SETTING_OCR_SETTINGS_VERSION)?;
-            let version_ok = version_raw
-                .as_deref()
-                .and_then(|v| v.parse::<u32>().ok())
+            let version_ok = version_raw.as_deref().and_then(|v| v.parse::<u32>().ok())
                 == Some(OCR_SETTINGS_VERSION);
             if !version_ok {
                 SettingsRepo::delete_prefix(conn, "ocr.")?;
@@ -81,7 +79,7 @@ impl SettingsService {
             });
         }
         if key == SETTING_UI_THEME {
-            UiTheme::parse(value).map_err(|_| AppError::ValidationError {
+            UiTheme::parse(value).ok_or_else(|| AppError::ValidationError {
                 message: format!("invalid ui.theme: {value}"),
             })?;
         }
@@ -106,7 +104,7 @@ impl SettingsService {
             });
         }
         if key == SETTING_OCR_INSPECTOR_PLACEMENT {
-            parse_inspector_placement(value).map_err(|_| AppError::ValidationError {
+            parse_inspector_placement(value).ok_or_else(|| AppError::ValidationError {
                 message: format!("invalid ocr.inspector_placement: {value}"),
             })?;
         }
@@ -117,7 +115,7 @@ impl SettingsService {
         let raw = Self::get(db, SETTING_UI_THEME)?;
         Ok(raw
             .as_deref()
-            .and_then(|v| UiTheme::parse(v).ok())
+            .and_then(UiTheme::parse)
             .unwrap_or(UiTheme::System))
     }
 

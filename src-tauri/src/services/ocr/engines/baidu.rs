@@ -54,9 +54,8 @@ impl OcrEngine for BaiduEngine {
         let token = self.get_access_token(api_key, secret_key).await?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(image);
         let client = reqwest::Client::new();
-        let url = format!(
-            "https://aip.baidubce.com/rest/2.0/ocr/v1/handwriting?access_token={token}"
-        );
+        let url =
+            format!("https://aip.baidubce.com/rest/2.0/ocr/v1/handwriting?access_token={token}");
         let resp = client
             .post(url)
             .header("content-type", "application/x-www-form-urlencoded")
@@ -68,9 +67,12 @@ impl OcrEngine for BaiduEngine {
             })?;
 
         let status = resp.status();
-        let body = resp.json::<Value>().await.map_err(|error| AppError::OcrNetwork {
-            message: format!("baidu handwriting response invalid: {error}"),
-        })?;
+        let body = resp
+            .json::<Value>()
+            .await
+            .map_err(|error| AppError::OcrNetwork {
+                message: format!("baidu handwriting response invalid: {error}"),
+            })?;
 
         if !status.is_success() {
             return Err(AppError::OcrEngine {
@@ -111,9 +113,8 @@ impl BaiduEngine {
     async fn recognize_with_token(&self, image: &[u8], token: &str) -> Result<OcrResult, AppError> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(image);
         let client = reqwest::Client::new();
-        let url = format!(
-            "https://aip.baidubce.com/rest/2.0/ocr/v1/handwriting?access_token={token}"
-        );
+        let url =
+            format!("https://aip.baidubce.com/rest/2.0/ocr/v1/handwriting?access_token={token}");
         let resp = client
             .post(url)
             .header("content-type", "application/x-www-form-urlencoded")
@@ -125,9 +126,12 @@ impl BaiduEngine {
             })?;
 
         let status = resp.status();
-        let body = resp.json::<Value>().await.map_err(|error| AppError::OcrNetwork {
-            message: format!("baidu handwriting response invalid: {error}"),
-        })?;
+        let body = resp
+            .json::<Value>()
+            .await
+            .map_err(|error| AppError::OcrNetwork {
+                message: format!("baidu handwriting response invalid: {error}"),
+            })?;
 
         if !status.is_success() {
             return Err(AppError::OcrEngine {
@@ -212,9 +216,12 @@ impl BaiduEngine {
                 message: format!("baidu oauth request failed: {error}"),
             })?;
 
-        let body = resp.json::<Value>().await.map_err(|error| AppError::OcrNetwork {
-            message: format!("baidu oauth response invalid: {error}"),
-        })?;
+        let body = resp
+            .json::<Value>()
+            .await
+            .map_err(|error| AppError::OcrNetwork {
+                message: format!("baidu oauth response invalid: {error}"),
+            })?;
 
         let token = body
             .get("access_token")

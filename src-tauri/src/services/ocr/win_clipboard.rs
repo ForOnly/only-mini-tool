@@ -10,11 +10,10 @@ use crate::errors::AppError;
 
 /// 读取 CF_DIB 或 CF_BITMAP，解码为 RGBA。
 pub fn read_cf_dib_or_bitmap() -> Result<RgbaImage, AppError> {
-    let _clip = clipboard_win::Clipboard::new_attempts(10).map_err(|error| {
-        AppError::InternalError {
+    let _clip =
+        clipboard_win::Clipboard::new_attempts(10).map_err(|error| AppError::InternalError {
             message: format!("clipboard unavailable: {error}"),
-        }
-    })?;
+        })?;
 
     // CF_DIB：BITMAPINFOHEADER + 像素（无 BITMAPFILEHEADER）
     if clipboard_win::is_format_avail(clipboard_win::formats::CF_DIB) {

@@ -8,7 +8,11 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "gen:types": "cargo run --manifest-path src-tauri/Cargo.toml --bin export-ts"
+    "gen:types": "cargo run --manifest-path src-tauri/Cargo.toml --bin export-ts",
+    "check:fe": "vue-tsc --noEmit",
+    "check:types": "npm run gen:types && git diff --exit-code -- src/api/generated",
+    "check:version": "node scripts/bump-version.mjs --check",
+    "bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

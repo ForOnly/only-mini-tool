@@ -18,11 +18,11 @@ pub fn engine_setting_key(engine_id: &str, field: &str) -> String {
 }
 
 /// 校验结果面板停靠位置。
-pub fn parse_inspector_placement(raw: &str) -> Result<&'static str, ()> {
+pub fn parse_inspector_placement(raw: &str) -> Option<&'static str> {
     match raw.trim() {
-        "left" => Ok("left"),
-        "right" => Ok("right"),
-        "bottom" => Ok("bottom"),
-        _ => Err(()),
+        "left" => Some("left"),
+        "right" => Some("right"),
+        "bottom" => Some("bottom"),
+        _ => None,
     }
 }

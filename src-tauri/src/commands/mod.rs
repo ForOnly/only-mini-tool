@@ -28,7 +28,10 @@ pub fn set_setting(
         appearance::sync_from_settings(&app);
     }
     if key == SETTING_DEBUG_ENABLED {
-        tracing::info!(enabled = value, "debug setting changed (restart for full log level)");
+        tracing::info!(
+            enabled = value,
+            "debug setting changed (restart for full log level)"
+        );
     }
     Ok(())
 }

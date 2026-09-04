@@ -17,12 +17,13 @@ impl LogService {
             return Ok(String::new());
         }
         let limit = max_bytes.unwrap_or(DEFAULT_TAIL_BYTES).max(1024);
-        let mut file = OpenOptions::new()
-            .read(true)
-            .open(&path)
-            .map_err(|error| AppError::InternalError {
-                message: format!("read log: {error}"),
-            })?;
+        let mut file =
+            OpenOptions::new()
+                .read(true)
+                .open(&path)
+                .map_err(|error| AppError::InternalError {
+                    message: format!("read log: {error}"),
+                })?;
         let len = file
             .seek(SeekFrom::End(0))
             .map_err(|error| AppError::InternalError {
@@ -75,7 +76,7 @@ impl LogService {
                 .map_err(|error| AppError::InternalError {
                     message: format!("open logs dir: {error}"),
                 })?;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(target_os = "windows"))]
         {

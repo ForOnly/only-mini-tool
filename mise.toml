@@ -25,3 +25,11 @@ depends = ["install"]
 description = "从 Rust domain 导出 TypeScript 类型"
 run = "cargo run --bin export-ts"
 dir = "src-tauri"
+
+[tasks.bump]
+description = "同步 bump 四处 version（透传参数，如 patch --tag）"
+run = "node scripts/bump-version.mjs"
+
+[tasks.ci]
+description = "本地对齐 CI：version + FE typecheck + cargo check + gen-types drift"
+run = "npm run check:version && npm run check:fe && cargo check --manifest-path src-tauri/Cargo.toml && npm run check:types"

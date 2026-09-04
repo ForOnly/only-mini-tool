@@ -25,7 +25,8 @@ const DEFAULT_MODEL: &str = "PP-OCRv5";
 const JOBS_PATH: &str = "/api/v2/ocr/jobs";
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-const OPTIONAL_PAYLOAD: &str = r#"{"useDocOrientationClassify":false,"useDocUnwarping":false,"useTextlineOrientation":false}"#;
+const OPTIONAL_PAYLOAD: &str =
+    r#"{"useDocOrientationClassify":false,"useDocUnwarping":false,"useTextlineOrientation":false}"#;
 
 #[async_trait]
 impl OcrEngine for PaddleEngine {
@@ -99,9 +100,12 @@ async fn submit_job(
         })?;
 
     let status = resp.status();
-    let body = resp.json::<Value>().await.map_err(|error| AppError::OcrNetwork {
-        message: format!("paddle job submit response invalid: {error}"),
-    })?;
+    let body = resp
+        .json::<Value>()
+        .await
+        .map_err(|error| AppError::OcrNetwork {
+            message: format!("paddle job submit response invalid: {error}"),
+        })?;
 
     if !status.is_success() {
         return Err(AppError::OcrEngine {
@@ -134,9 +138,12 @@ async fn poll_until_done(
             })?;
 
         let status = resp.status();
-        let body = resp.json::<Value>().await.map_err(|error| AppError::OcrNetwork {
-            message: format!("paddle job poll response invalid: {error}"),
-        })?;
+        let body = resp
+            .json::<Value>()
+            .await
+            .map_err(|error| AppError::OcrNetwork {
+                message: format!("paddle job poll response invalid: {error}"),
+            })?;
 
         if !status.is_success() {
             return Err(AppError::OcrEngine {
