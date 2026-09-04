@@ -6,6 +6,10 @@ export default {
     backHome: "Back to launcher",
     moreActions: "More actions",
     messageClose: "Dismiss",
+    windowMinimize: "Minimize",
+    windowMaximize: "Maximize",
+    windowRestore: "Restore",
+    windowClose: "Close",
   },
   launcher: {
     open: "Open",

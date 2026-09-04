@@ -2,11 +2,10 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
-import AppButton from "@/components/common/AppButton.vue";
 import { useWorkbench } from "@/composables/useWorkbench";
 
 const { t } = useI18n();
-const { configTool, goBack } = useWorkbench();
+const { configTool } = useWorkbench();
 
 const section = computed(() => configTool.value?.settingsSection ?? null);
 const title = computed(() =>
@@ -19,7 +18,6 @@ const title = computed(() =>
     <div class="inner">
       <header class="head">
         <h1>{{ t("settings.toolConfig") }} · {{ title }}</h1>
-        <AppButton variant="ghost" @click="goBack">{{ t("settings.back") }}</AppButton>
       </header>
 
       <component :is="section" v-if="section" />
@@ -42,11 +40,7 @@ const title = computed(() =>
 }
 
 .head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: var(--space-5);
-  gap: var(--space-3);
 }
 
 h1 {

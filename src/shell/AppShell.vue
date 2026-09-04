@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import AppMessageHost from "@/components/common/AppMessageHost.vue";
 import SettingsView from "@/settings/SettingsView.vue";
+import AppTitleBar from "@/shell/AppTitleBar.vue";
+import BackFab from "@/shell/BackFab.vue";
 import ToolConfigView from "@/shell/ToolConfigView.vue";
-import ToolHeader from "@/shell/ToolHeader.vue";
 import ToolLauncher from "@/shell/ToolLauncher.vue";
 import ToolStage from "@/shell/ToolStage.vue";
 import { useWorkbench } from "@/composables/useWorkbench";
@@ -12,7 +13,11 @@ const { mainView } = useWorkbench();
 
 <template>
   <div class="shell">
+    <AppTitleBar />
+
     <div class="body">
+      <BackFab />
+
       <Transition name="view-fade" mode="out-in">
         <ToolLauncher v-if="mainView === 'home'" key="home" class="view-root" />
         <div v-else-if="mainView === 'settings'" key="settings" class="view-root">
@@ -25,7 +30,6 @@ const { mainView } = useWorkbench();
 
       <!-- 常驻挂载：回桌面时仅隐藏，KeepAlive 缓存不丢 -->
       <div v-show="mainView === 'tool'" class="tool-view view-root">
-        <ToolHeader />
         <ToolStage />
       </div>
     </div>

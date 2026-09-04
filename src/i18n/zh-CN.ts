@@ -6,6 +6,10 @@ export default {
     backHome: "返回桌面",
     moreActions: "更多操作",
     messageClose: "关闭通知",
+    windowMinimize: "最小化",
+    windowMaximize: "最大化",
+    windowRestore: "还原",
+    windowClose: "关闭",
   },
   launcher: {
     open: "打开",

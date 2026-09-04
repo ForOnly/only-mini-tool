@@ -2,7 +2,6 @@
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import AppButton from "@/components/common/AppButton.vue";
 import AppContextMenu from "@/components/common/AppContextMenu.vue";
 import type { ContextMenuItem } from "@/components/common/contextMenuTypes";
 import ToolCard from "@/components/common/ToolCard.vue";
@@ -14,7 +13,6 @@ const { t } = useI18n();
 const {
   tools,
   openTool,
-  openSettings,
   openToolConfig,
   closeTool,
   isToolRunning,
@@ -93,30 +91,6 @@ async function onMenuSelect(actionId: string) {
 
 <template>
   <div class="launcher">
-    <header class="head">
-      <h1 class="title">{{ t("app.name") }}</h1>
-      <AppButton
-        class="gear-btn"
-        variant="ghost"
-        :title="t('settings.title')"
-        @click="openSettings('home')"
-      >
-        <svg class="gear" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-          <path
-            d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 11 3.2V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.5 1Z"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-        </svg>
-        <span class="sr">{{ t("settings.title") }}</span>
-      </AppButton>
-    </header>
-
     <div class="grid-wrap">
       <div class="grid">
         <div v-for="tool in tools" :key="tool.id" class="card-wrap">
@@ -152,22 +126,6 @@ async function onMenuSelect(actionId: string) {
   overflow: hidden;
 }
 
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--space-5);
-  flex-shrink: 0;
-}
-
-.title {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: var(--font-weight-display);
-  letter-spacing: -0.02em;
-}
-
 .grid-wrap {
   flex: 1;
   min-height: 0;
@@ -187,23 +145,5 @@ async function onMenuSelect(actionId: string) {
 
 .card-wrap {
   position: relative;
-}
-
-.gear-btn {
-  position: relative;
-}
-
-.gear {
-  width: 20px;
-  height: 20px;
-  display: block;
-}
-
-.sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
 }
 </style>

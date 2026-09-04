@@ -208,7 +208,7 @@ function onResizePointerDown(event: PointerEvent) {
         <div class="head-row">
           <div class="head-title">
             <h3>{{ t("ocr.inspectorTitle") }}</h3>
-            <p
+            <span
               class="status"
               :class="{
                 error: !!lastError && !busy,
@@ -218,7 +218,7 @@ function onResizePointerDown(event: PointerEvent) {
             >
               <span v-if="busy" class="status-spinner" aria-hidden="true" />
               {{ statusText }}
-            </p>
+            </span>
           </div>
           <div class="head-actions">
             <AppButton v-if="showRetry" variant="ghost" @click="runRecognize">
@@ -379,15 +379,18 @@ function onResizePointerDown(event: PointerEvent) {
 
 .head-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .head-title {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
   min-width: 0;
   flex: 1;
@@ -395,8 +398,16 @@ function onResizePointerDown(event: PointerEvent) {
 
 .head-actions {
   display: flex;
+  align-items: center;
   gap: var(--space-1);
-  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.head-actions :deep(.btn),
+.list :deep(.btn) {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  font-size: var(--text-sm);
 }
 
 .head-row h3 {
@@ -404,22 +415,26 @@ function onResizePointerDown(event: PointerEvent) {
   font-size: var(--text-md);
   font-weight: var(--font-weight-title);
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .status {
   margin: 0;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  width: fit-content;
-  max-width: 100%;
-  padding: 2px var(--space-2);
+  gap: var(--space-1);
+  flex-shrink: 0;
+  max-width: 50%;
+  padding: 1px var(--space-2);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 88%, transparent);
   font-size: var(--text-xs);
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status.busy {
@@ -458,7 +473,7 @@ function onResizePointerDown(event: PointerEvent) {
 .content {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-2);
   min-height: 0;
   height: 100%;
 }
@@ -473,12 +488,12 @@ function onResizePointerDown(event: PointerEvent) {
 .tab {
   appearance: none;
   margin: 0;
-  padding: var(--space-1) var(--space-3);
+  padding: 4px var(--space-2);
   border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   background: transparent;
-  color: var(--text-muted);
+  color: color-mix(in srgb, var(--text-muted) 85%, transparent);
   font-size: var(--text-sm);
   font-weight: var(--font-weight-title);
   cursor: pointer;
@@ -500,12 +515,12 @@ function onResizePointerDown(event: PointerEvent) {
 
 .empty {
   margin: auto;
-  padding: var(--space-4);
+  padding: var(--space-3) var(--space-4);
   color: var(--text-muted);
   font-size: var(--text-sm);
-  line-height: 1.5;
+  line-height: 1.45;
   text-align: center;
-  max-width: 16rem;
+  max-width: 14rem;
 }
 
 .full,
@@ -521,12 +536,12 @@ function onResizePointerDown(event: PointerEvent) {
   margin: 0;
   flex: 1;
   min-height: 0;
-  padding: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: var(--radius);
   background: var(--surface-2);
-  font-size: var(--text-md);
-  line-height: 1.55;
+  font-size: var(--text-sm);
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   overflow: auto;
@@ -538,7 +553,7 @@ ul {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   overflow: auto;
   min-height: 0;
   flex: 1;
@@ -548,17 +563,19 @@ li {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
+  min-height: 30px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius);
   border-left: 2px solid transparent;
+  transition: background var(--motion-fast);
 }
 
-li.active,
 li:hover {
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-2));
 }
 
 li.active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
   border-left-color: var(--accent);
 }
 
@@ -570,7 +587,7 @@ li.active {
   background: transparent;
   color: var(--text);
   cursor: pointer;
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   padding: 0;
   overflow: hidden;
   text-overflow: ellipsis;

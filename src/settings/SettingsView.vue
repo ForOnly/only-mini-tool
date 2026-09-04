@@ -1,13 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
 
-import AppButton from "@/components/common/AppButton.vue";
-import { useWorkbench } from "@/composables/useWorkbench";
 import AppearanceSection from "@/settings/sections/AppearanceSection.vue";
 import DebugSection from "@/settings/sections/DebugSection.vue";
 
 const { t } = useI18n();
-const { goBack } = useWorkbench();
 </script>
 
 <template>
@@ -15,7 +12,6 @@ const { goBack } = useWorkbench();
     <div class="settings-inner">
       <header class="head">
         <h1>{{ t("settings.title") }}</h1>
-        <AppButton variant="ghost" @click="goBack">{{ t("settings.back") }}</AppButton>
       </header>
 
       <AppearanceSection />
@@ -39,9 +35,6 @@ const { goBack } = useWorkbench();
 }
 
 .head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   margin-bottom: var(--space-5);
 }
 

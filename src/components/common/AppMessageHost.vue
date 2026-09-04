@@ -21,7 +21,7 @@ const { messages, dismiss } = useMessage();
 <style scoped>
 .host {
   position: fixed;
-  top: var(--space-3);
+  top: calc(var(--titlebar-height) + var(--space-2));
   inset-inline: 0;
   z-index: var(--z-message);
   display: flex;
