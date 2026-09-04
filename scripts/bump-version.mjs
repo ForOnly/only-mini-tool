@@ -150,9 +150,10 @@ function createReleaseCommitAndTag(version) {
       "src-tauri/Cargo.toml",
     ]);
     const extra = lines.filter((line) => {
-      const path = line.slice(3).replace(/\\/g, "/");
-      // rename: "R  old -> new"
-      const normalized = path.includes(" -> ") ? path.split(" -> ").pop() : path;
+      // porcelain: XY PATH 或 rename「R  old -> new」；兼容 \r 与前置空格
+      const m = line.match(/^.. (.+)$/);
+      const path = (m ? m[1] : line.slice(3)).replace(/\\/g, "/").trim();
+      const normalized = path.includes(" -> ") ? path.split(" -> ").pop().trim() : path;
       return !allowed.has(normalized);
     });
     if (extra.length > 0) {
