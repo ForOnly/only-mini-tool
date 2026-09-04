@@ -45,7 +45,7 @@ mise run ci          # 本地对齐 CI（version + typecheck + cargo check + typ
 mise run build       # 构建生产包（NSIS / MSI）
 mise run gen-types   # 从 Rust domain 导出 TypeScript 类型
 mise run bump -- --check # 检查version
-mise run bump -- patch --tag   # 同步四处 version 并打 v* tag（不 push）
+mise run release -- patch --git-tag --push   # 一键发版（bump + tag + push）
 ```
 
 也可直接使用 npm / cargo：
@@ -56,6 +56,7 @@ npm run build
 npm run gen:types
 npm run check:version
 npm run bump -- patch
+npm run release:patch
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
@@ -65,26 +66,30 @@ CI：push/PR → `master` 跑 [`.github/workflows/ci.yml`](.github/workflows/ci.
 
 [`scripts/bump-version.mjs`](scripts/bump-version.mjs) 同步四处版本号：`package.json`、`package-lock.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`。
 
+**一键发版（推荐）**：
+
 ```bash
-npm run check:version              # 校验四处一致（CI / mise run ci 也会跑）
-npm run bump -- patch              # 升 patch，只改文件不 commit
-npm run bump -- minor              # 升 minor
-npm run bump -- major              # 升 major
-npm run bump -- 1.2.3              # 设为指定 x.y.z（可写 v1.2.3）
-npm run bump -- patch --tag        # 写入 + commit + annotated tag vX.Y.Z（不 push）
-mise run bump -- patch --tag       # 同上（mise 入口）
+npm run release:patch    # bump patch + commit + annotated tag + push 分支与 tag
+npm run release:minor
+npm run release:major
+# 或
+mise run release -- patch --git-tag --push
 ```
 
-`--tag` 时：提交信息为 `chore: release vX.Y.Z`，仅允许上述四个版本文件有未提交改动；脚本**不会** push。
+**分步**：
 
-推荐发版：
+```bash
+npm run check:version                         # 校验四处一致
+npm run bump -- patch                         # 只改文件不 commit
+node scripts/bump-version.mjs patch --git-tag # commit + tag（不 push）
+node scripts/bump-version.mjs patch --git-tag --push  # tag 后 push
+```
 
-1. `master` CI 通过  
-2. `npm run bump -- patch --tag`（或 minor / major）  
-3. `git push && git push origin vX.Y.Z`  
-4. Release workflow 产出 draft 安装包 → 冒烟后 publish  
+- `--git-tag`：提交 `chore: release vX.Y.Z`（仅四个版本文件可脏）并打 annotated tag  
+- `--push`：必须与 `--git-tag` 同用；执行 `git push -u origin HEAD` 与 `git push origin vX.Y.Z`  
+- **勿用** `npm run bump -- … --tag`：npm 会吞掉 `--tag`，导致打不上 tag  
 
-细节见 [doc/技术实现文档.md](doc/技术实现文档.md) §7。`npm run bump -- ...` 中的 `--` 必须保留，否则参数进不了脚本。
+推荐流程：`master` CI 绿 → `npm run release:patch` → Release workflow 产出 draft → 冒烟后 publish。细节见 [doc/技术实现文档.md](doc/技术实现文档.md) §7。
 
 ## 目录结构（摘要）
 

@@ -5,8 +5,11 @@
  * 用法:
  *   node scripts/bump-version.mjs patch|minor|major
  *   node scripts/bump-version.mjs 1.2.3
- *   node scripts/bump-version.mjs patch --tag
+ *   node scripts/bump-version.mjs patch --git-tag
+ *   node scripts/bump-version.mjs patch --git-tag --push
  *   node scripts/bump-version.mjs --check
+ *
+ * 注意: npm 会吞掉 --tag，请用 --git-tag，或 npm run release:patch|minor|major。
  */
 import { execFileSync, execSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -22,6 +25,11 @@ const paths = {
 };
 
 const SEMVER_RE = /^(\d+)\.(\d+)\.(\d+)$/;
+const FLAG_CHECK = "--check";
+const FLAG_GIT_TAG = "--git-tag";
+/** @deprecated npm 会吞掉此 flag；保留给 node/mise 直调 */
+const FLAG_TAG_ALIAS = "--tag";
+const FLAG_PUSH = "--push";
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
@@ -148,7 +156,7 @@ function createReleaseCommitAndTag(version) {
       return !allowed.has(normalized);
     });
     if (extra.length > 0) {
-      console.error("工作区有未提交改动，无法使用 --tag：");
+      console.error("工作区有未提交改动，无法使用 --git-tag：");
       console.error(extra.join("\n"));
       process.exit(1);
     }
@@ -190,25 +198,55 @@ function createReleaseCommitAndTag(version) {
     cwd: root,
     stdio: "inherit",
   });
-  console.log(`\n已创建 tag v${version}。推送：`);
-  console.log(`  git push && git push origin v${version}`);
+  console.log(`\n已创建 tag v${version}`);
+}
+
+function pushRelease(version) {
+  console.log(`\n推送分支与 tag v${version} …`);
+  execFileSync("git", ["push", "-u", "origin", "HEAD"], {
+    cwd: root,
+    stdio: "inherit",
+  });
+  execFileSync("git", ["push", "origin", `v${version}`], {
+    cwd: root,
+    stdio: "inherit",
+  });
+  console.log(`已推送 origin HEAD 与 v${version}（将触发 Release workflow）`);
 }
 
 function printUsage() {
   console.log(`用法:
-  npm run bump -- patch|minor|major [--tag]
-  npm run bump -- 1.2.3 [--tag]
-  npm run bump -- --check`);
+  npm run release:patch|minor|major          # 一键：bump + git-tag + push
+  npm run bump -- patch|minor|major
+  npm run bump -- 1.2.3
+  node scripts/bump-version.mjs patch --git-tag [--push]
+  mise run release -- patch --git-tag --push
+  npm run bump -- --check
+
+注意: 勿用 npm run bump -- … --tag（npm 会吞掉 --tag）；请用 --git-tag 或 release:*`);
 }
 
 function main() {
   const args = process.argv.slice(2).filter((a) => a !== "--");
-  const check = args.includes("--check");
-  const tag = args.includes("--tag");
-  const positional = args.filter((a) => a !== "--check" && a !== "--tag");
+  const check = args.includes(FLAG_CHECK);
+  const wantTag = args.includes(FLAG_GIT_TAG) || args.includes(FLAG_TAG_ALIAS);
+  const wantPush = args.includes(FLAG_PUSH);
+  const positional = args.filter(
+    (a) =>
+      a !== FLAG_CHECK &&
+      a !== FLAG_GIT_TAG &&
+      a !== FLAG_TAG_ALIAS &&
+      a !== FLAG_PUSH,
+  );
+
+  if (wantPush && !wantTag) {
+    console.error("--push 必须与 --git-tag（或 --tag）一起使用");
+    printUsage();
+    process.exit(1);
+  }
 
   if (check) {
-    if (positional.length > 0) {
+    if (positional.length > 0 || wantTag || wantPush) {
       printUsage();
       process.exit(1);
     }
@@ -229,7 +267,7 @@ function main() {
       ? bumpSemver(current, spec)
       : normalizeVersion(spec);
 
-  if (next === current && !tag) {
+  if (next === current && !wantTag) {
     console.error(`版本未变化：${current}`);
     process.exit(1);
   }
@@ -239,14 +277,23 @@ function main() {
     assertConsistent();
     console.log(`${current} → ${next}`);
   } else {
-    console.log(`版本已是 ${next}，仅执行 --tag`);
+    console.log(`版本已是 ${next}，仅执行 --git-tag`);
   }
 
-  if (tag) {
+  if (wantTag) {
     createReleaseCommitAndTag(next);
+    if (wantPush) {
+      pushRelease(next);
+    } else {
+      console.log("未加 --push。需要推送时：");
+      console.log(`  git push -u origin HEAD && git push origin v${next}`);
+      console.log(`  或: node scripts/bump-version.mjs ${next} --git-tag --push`);
+      console.log(`  或: npm run release:patch|minor|major`);
+    }
   } else {
-    console.log("已写入四处 version。需要打 tag 时：");
-    console.log(`  npm run bump -- ${next} --tag`);
+    console.log("已写入四处 version。一键发版：");
+    console.log(`  npm run release:patch   # 或 minor / major`);
+    console.log(`  或: node scripts/bump-version.mjs ${next} --git-tag --push`);
   }
 }
 

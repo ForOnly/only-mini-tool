@@ -27,7 +27,11 @@ run = "cargo run --bin export-ts"
 dir = "src-tauri"
 
 [tasks.bump]
-description = "同步 bump 四处 version（透传参数，如 patch --tag）"
+description = "同步 bump 四处 version（透传参数，如 patch --git-tag）"
+run = "node scripts/bump-version.mjs"
+
+[tasks.release]
+description = "bump + git-tag + push（例：mise run release -- patch --git-tag --push）"
 run = "node scripts/bump-version.mjs"
 
 [tasks.ci]

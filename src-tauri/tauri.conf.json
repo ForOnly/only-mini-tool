@@ -27,13 +27,22 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' asset: http://asset.localhost https://asset.localhost blob: data:; connect-src ipc: http://ipc.localhost https://fonts.googleapis.com https://fonts.gstatic.com",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPDATA/**", "$APPLOCALDATA/**", "$CACHE/**", "$APPCACHE/**", "$TEMP/**"]
+        "scope": [
+          "$APPDATA/**",
+          "$APPLOCALDATA/**",
+          "$CACHE/**",
+          "$APPCACHE/**",
+          "$TEMP/**"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

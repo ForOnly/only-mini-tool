@@ -12,7 +12,10 @@
     "check:fe": "vue-tsc --noEmit",
     "check:types": "npm run gen:types && git diff --exit-code -- src/api/generated",
     "check:version": "node scripts/bump-version.mjs --check",
-    "bump": "node scripts/bump-version.mjs"
+    "bump": "node scripts/bump-version.mjs",
+    "release:patch": "node scripts/bump-version.mjs patch --git-tag --push",
+    "release:minor": "node scripts/bump-version.mjs minor --git-tag --push",
+    "release:major": "node scripts/bump-version.mjs major --git-tag --push"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
