@@ -200,6 +200,19 @@ fn quote_if_needed(s: &str) -> String {
     }
 }
 
+/// env 未设 `PYTHONIOENCODING` 时注入 utf-8：使 Python 子进程管道 stdio 与工具统一
+/// UTF-8（stdin JSON 通道与 stdout 解码一致；对齐 Python 3.15 起的默认行为）。
+/// 用户在进程/全局/脚本任一层显式设置则尊重原值；大小写不敏感检查避免
+/// Windows env block 产生仅大小写不同的重复键。
+pub fn ensure_stdio_utf8(env: &mut HashMap<String, String>) {
+    let unset = !env
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case("PYTHONIOENCODING"));
+    if unset {
+        env.insert("PYTHONIOENCODING".to_string(), "utf-8".to_string());
+    }
+}
+
 /// 临时脚本守卫：写 `run-{uuid}.py` 至 run_dir，Drop 时删除（含 Err 路径）。
 /// 正常路径随 guard drop 删除；app 崩溃残留由下次运行前的孤儿清理兜底。
 pub struct TempScriptGuard {
@@ -400,6 +413,23 @@ mod tests {
             &["--k".to_string(), "v".to_string()],
         );
         assert_eq!(args, vec!["-u", "C:/tmp/run-x.py", "--k", "v", "--tail"]);
+    }
+
+    #[test]
+    fn ensure_stdio_utf8_respects_existing_any_case() {
+        let mut env = HashMap::new();
+        ensure_stdio_utf8(&mut env);
+        assert_eq!(env["PYTHONIOENCODING"], "utf-8");
+
+        // 用户显式设置（任意层）不被覆盖
+        let mut env = HashMap::from([("PYTHONIOENCODING".to_string(), "gbk".to_string())]);
+        ensure_stdio_utf8(&mut env);
+        assert_eq!(env["PYTHONIOENCODING"], "gbk");
+
+        // 大小写变体也视为已设置（避免 Windows env block 重复键）
+        let mut env = HashMap::from([("pythonioencoding".to_string(), "utf-8".to_string())]);
+        ensure_stdio_utf8(&mut env);
+        assert_eq!(env.len(), 1);
     }
 
     #[test]

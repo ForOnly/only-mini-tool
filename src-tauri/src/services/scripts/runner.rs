@@ -341,8 +341,9 @@ impl LimitedOutput {
         }
     }
 
-    /// 汇出最终文本：head + tail 拼接，`from_utf8_lossy` 转换；
-    /// tail 前导残缺字节（多字节字符劈开）先丢弃，接缝处至多一个 U+FFFD。
+    /// 汇出最终文本：head + tail 拼接后经 `decode_output` 解码；
+    /// tail 前导残缺字节（UTF-8 多字节字符劈开）先丢弃，接缝处至多一个 U+FFFD
+    /// （对 GB18030 字节流，该 skip 可能多丢 ≤3 字节——接缝字符本就在丢弃语义内）。
     pub fn finish(self) -> String {
         let mut buf = Vec::with_capacity(self.head.len() + self.tail_len);
         buf.extend_from_slice(&self.head);
@@ -358,7 +359,7 @@ impl LimitedOutput {
         buf.extend_from_slice(&tail[skip..]);
 
         let kept = buf.len();
-        let text = String::from_utf8_lossy(&buf).into_owned();
+        let text = decode_output(&buf);
         if self.total > kept {
             format!(
                 "{text}\n\n… [truncated, total {} bytes, kept {kept} bytes]",
@@ -367,6 +368,19 @@ impl LimitedOutput {
         } else {
             text
         }
+    }
+}
+
+/// 子进程输出解码：UTF-8 优先，非 UTF-8 回退 GB18030（GBK/GB2312 超集，ASCII 透明）。
+///
+/// 中文 Windows 上 Python <3.15 的管道 stdio 编码是 cp936（PEP 686 前的默认），
+/// GBK 字节经 `from_utf8_lossy` 会变 U+FFFD 混杂偶发有效对的乱码。
+/// 已知限制：混合编码流（GBK 输出混入子进程 UTF-8 原始字节）会被整体按
+/// GB18030 解码，UTF-8 段因此损坏——个人工具不做逐段探测。
+fn decode_output(bytes: &[u8]) -> String {
+    match String::from_utf8(bytes.to_vec()) {
+        Ok(text) => text,
+        Err(_) => encoding_rs::GB18030.decode(bytes).0.into_owned(),
     }
 }
 
@@ -405,14 +419,51 @@ mod tests {
     }
 
     #[test]
-    fn limited_output_utf8_seam_single_replacement() {
+    fn limited_output_utf8_seam_bounded_artifact() {
         // "界" 是 3 字节 (E7 95 8C)；head 5B 劈开它，tail 以完整字符开始
         let mut o = LimitedOutput::new(5, 16);
         o.push("abc\u{754c}defgh".as_bytes()); // abc + 界(3B) + defgh
         let text = o.finish();
-        // head "abc\xe7\x95"，接缝一个 U+FFFD，随后 "defgh"
-        assert!(text.contains("abc\u{FFFD}defgh"));
+        // 接缝伪影限于单字符：UTF-8 流的 dangling E7 95 在 GB18030 回退下
+        // 解成一个 GBK 字符（或 U+FFFD）——均不产生双重 FFFD
+        assert!(text.starts_with("abc"), "text was: {text}");
+        assert!(text.contains("defgh"), "text was: {text}");
         assert!(!text.contains("\u{FFFD}\u{FFFD}"));
+    }
+
+    #[test]
+    fn limited_output_decodes_gbk_fallback() {
+        // 中文 Windows Python <3.15 管道默认编码 cp936/GBK
+        let (gbk, _, _) = encoding_rs::GB18030.encode("用户：222\n创建文件：output.txt\n");
+        let mut o = LimitedOutput::new(4096, 1024);
+        o.push(&gbk);
+        let text = o.finish();
+        assert!(text.contains("用户：222"), "text was: {text}");
+        assert!(text.contains("创建文件：output.txt"), "text was: {text}");
+    }
+
+    #[test]
+    fn limited_output_valid_utf8_passthrough() {
+        let mut o = LimitedOutput::new(4096, 1024);
+        o.push("用户：222".as_bytes());
+        assert_eq!(o.finish(), "用户：222");
+    }
+
+    #[test]
+    fn limited_output_gbk_truncated_still_decodes() {
+        let volume = "用户名测试行\n".repeat(64);
+        let (gbk, _, _) = encoding_rs::GB18030.encode(&volume);
+        let mut o = LimitedOutput::new(32, 32); // 极小上限触发截断
+        o.push(&gbk);
+        let text = o.finish();
+        assert!(
+            text.contains("[truncated, total"),
+            "text tail: {}",
+            &text[text.len().saturating_sub(120)..]
+        );
+        // 截断后残余仍是可读中文（接缝至多个别 U+FFFD，不出现 û/ļ 式混杂乱码）
+        assert!(text.contains("用户名"), "text was: {text}");
+        assert!(!text.contains('û') && !text.contains('ļ'));
     }
 
     #[test]

@@ -182,7 +182,8 @@ impl ScriptsService {
         let guard = TempScriptGuard::create(&run_dir, &script.body).await?;
 
         let process_env: HashMap<String, String> = std::env::vars().collect();
-        let env = prepare::merge_env(process_env, &settings.env, &script.env, &projected.envs);
+        let mut env = prepare::merge_env(process_env, &settings.env, &script.env, &projected.envs);
+        prepare::ensure_stdio_utf8(&mut env);
         let args = prepare::build_args(&script.args_template, guard.path(), &projected.args);
         let command = prepare::display_command(
             &interpreter,
