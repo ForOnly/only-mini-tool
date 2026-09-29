@@ -24,4 +24,5 @@ export type {
   ScriptsSettingsBundle,
   ScriptsSettingsSave,
   UiTheme,
+  VenvStatus,
 } from "./generated";

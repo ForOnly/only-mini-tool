@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
-import AppButton from "@/components/common/AppButton.vue";
 import AppConfirm from "@/components/common/AppConfirm.vue";
 import ScriptEditor from "@/tools/scripts/ScriptEditor.vue";
 import ScriptLogPanel from "@/tools/scripts/ScriptLogPanel.vue";
@@ -10,12 +9,14 @@ import ScriptMetaPanel from "@/tools/scripts/ScriptMetaPanel.vue";
 import ScriptParamForm from "@/tools/scripts/ScriptParamForm.vue";
 import ScriptRunBar from "@/tools/scripts/ScriptRunBar.vue";
 import { useMessage } from "@/composables/useMessage";
+import { useWorkbench } from "@/composables/useWorkbench";
 import { useScriptRun } from "@/tools/scripts/useScriptRun";
 import { useScripts } from "@/tools/scripts/useScripts";
 import { formatAppError } from "@/utils/error";
 
 const { t } = useI18n();
 const { success, error } = useMessage();
+const { mainView } = useWorkbench();
 const {
   draft,
   dirty,
@@ -84,6 +85,14 @@ function confirmLeaveDiscard() {
   leaveAction.value = null;
 }
 
+// 弹窗 Teleport 到 body：离开工具视图（如标题栏返回桌面）时关闭，避免残留在桌面页上方
+watch(mainView, (view) => {
+  if (view !== "tool") {
+    leaveOpen.value = false;
+    leaveAction.value = null;
+  }
+});
+
 async function onRun() {
   if (!draft.value) return;
   try {
@@ -150,13 +159,11 @@ async function onCancel() {
       :message="t('scripts.unsavedMessage')"
       :confirm-label="t('scripts.save')"
       :cancel-label="t('common.cancel')"
+      :neutral-label="t('scripts.discard')"
       @confirm="confirmLeaveSave"
+      @neutral="confirmLeaveDiscard"
       @cancel="leaveOpen = false; leaveAction = null"
-    >
-      <AppButton variant="ghost" type="button" @click="confirmLeaveDiscard">
-        {{ t("scripts.discard") }}
-      </AppButton>
-    </AppConfirm>
+    />
   </div>
 </template>
 

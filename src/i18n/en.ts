@@ -161,6 +161,18 @@ export default {
     defaultWorkspace: "Default workspace",
     saveSettings: "Save",
     settingsSaved: "Script settings saved",
+    envPrefix: "Param env prefix",
+    envPrefixHint:
+      "Env var name = prefix + param key upper-cased (default PARAM_); update your scripts after changing it",
+    venvTitle: "Virtual environment",
+    venvCreate: "Create venv",
+    venvCreating: "Creating…",
+    venvCreated: "Virtual environment ready",
+    venvReady: "Created: {path}",
+    venvNotCreated: "Not created (.venv will be created under the default workspace)",
+    venvNeedWorkspace: "Configure the default workspace first",
+    venvHint:
+      "Runs detect .venv under the effective workspace (script-level workspace is probed when set) and prefer it over the global Python",
     paramDefault: "Default",
     runTimer: "{secs}s elapsed",
     commandLabel: "Command",

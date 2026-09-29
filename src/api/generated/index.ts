@@ -20,5 +20,6 @@ export type { ScriptCreate } from "./ScriptCreate";
 export type { ScriptUpdate } from "./ScriptUpdate";
 export type { ScriptsSettingsBundle } from "./ScriptsSettingsBundle";
 export type { ScriptsSettingsSave } from "./ScriptsSettingsSave";
+export type { VenvStatus } from "./VenvStatus";
 export type { ScriptRunRequest } from "./ScriptRunRequest";
 export type { ScriptRunResult } from "./ScriptRunResult";

@@ -49,13 +49,14 @@ pub struct ProjectedParams {
 pub fn project_params(
     schema: &[ScriptParamDef],
     params: &HashMap<String, String>,
+    env_prefix: &str,
 ) -> ProjectedParams {
     let mut out = ProjectedParams::default();
     for def in schema {
         let raw = params.get(&def.key).cloned().unwrap_or_default();
         match def.pass_as {
             ScriptParamPassAs::Env => {
-                let env_key = format!("PARAM_{}", def.key.to_uppercase());
+                let env_key = format!("{prefix}{}", def.key.to_uppercase(), prefix = env_prefix);
                 let value = if matches!(def.param_type, ScriptParamType::Boolean) {
                     if is_truthy(&raw) {
                         "1".into()
@@ -135,11 +136,17 @@ pub fn merge_env(
     env
 }
 
-/// 解释器解析：脚本覆盖 > 全局。
-pub fn resolve_interpreter(script_interpreter: Option<&str>, global_python: &str) -> String {
+/// 解释器解析：脚本覆盖 > **workspace venv python** > 全局 `scripts.python_path`。
+/// venv 候选由调用方探测（保持纯函数）；返回可能为空串（由调用方校验报错）。
+pub fn resolve_interpreter(
+    script_interpreter: Option<&str>,
+    venv_python: Option<&str>,
+    global_python: &str,
+) -> String {
     script_interpreter
         .map(str::trim)
         .filter(|s| !s.is_empty())
+        .or_else(|| venv_python.map(str::trim).filter(|s| !s.is_empty()))
         .unwrap_or(global_python.trim())
         .to_string()
 }
@@ -290,6 +297,14 @@ mod tests {
     }
 
     #[test]
+    fn env_projection_uses_custom_prefix() {
+        let schema = vec![def("name", ScriptParamType::String, ScriptParamPassAs::Env)];
+        let params = HashMap::from([("name".to_string(), "hi".to_string())]);
+        let out = project_params(&schema, &params, "CFG_");
+        assert_eq!(out.envs[0], ("CFG_NAME".to_string(), "hi".to_string()));
+    }
+
+    #[test]
     fn env_projection_boolean_encoding() {
         let schema = vec![
             def("flag", ScriptParamType::Boolean, ScriptParamPassAs::Env),
@@ -299,14 +314,14 @@ mod tests {
             ("flag".to_string(), "true".to_string()),
             ("name".to_string(), "hi".to_string()),
         ]);
-        let out = project_params(&schema, &params);
+        let out = project_params(&schema, &params, "PARAM_");
         assert_eq!(out.envs[0], ("PARAM_FLAG".to_string(), "1".to_string()));
         assert_eq!(out.envs[1], ("PARAM_NAME".to_string(), "hi".to_string()));
         assert!(out.args.is_empty());
         assert!(out.stdin.is_empty());
 
         let params = HashMap::from([("flag".to_string(), "false".to_string())]);
-        let out = project_params(&schema, &params);
+        let out = project_params(&schema, &params, "PARAM_");
         assert_eq!(out.envs[0], ("PARAM_FLAG".to_string(), "0".to_string()));
     }
 
@@ -324,12 +339,12 @@ mod tests {
             ("flag".to_string(), "true".to_string()),
             ("opt".to_string(), String::new()),
         ]);
-        let out = project_params(&schema, &params);
+        let out = project_params(&schema, &params, "PARAM_");
         assert_eq!(out.args, vec!["--must", "v", "--flag"]);
 
         // required 空值仍传键（后端校验会拦，投影保持显式）
         let params = HashMap::from([("must".to_string(), String::new())]);
-        let out = project_params(&schema, &params);
+        let out = project_params(&schema, &params, "PARAM_");
         assert_eq!(out.args, vec!["--must", ""]);
         assert!(out.envs.is_empty());
     }
@@ -347,7 +362,7 @@ mod tests {
             ("f".to_string(), "2.5".to_string()),
             ("flag".to_string(), "false".to_string()),
         ]);
-        let out = project_params(&schema, &params);
+        let out = project_params(&schema, &params, "PARAM_");
 
         // 整数优先：10 而非 10.0
         assert_eq!(out.stdin.get("n"), Some(&serde_json::json!(10)));
@@ -380,12 +395,17 @@ mod tests {
 
     #[test]
     fn interpreter_and_cwd_chains() {
+        const VENV: &str = "W:\\ws\\.venv\\Scripts\\python.exe";
+        // 脚本覆盖最优先（显式覆盖赢过 venv）
         assert_eq!(
-            resolve_interpreter(Some(" C:\\py\\x.exe "), "python"),
+            resolve_interpreter(Some(" C:\\py\\x.exe "), Some(VENV), "python"),
             "C:\\py\\x.exe"
         );
-        assert_eq!(resolve_interpreter(Some("  "), " python "), "python");
-        assert_eq!(resolve_interpreter(None, " python "), "python");
+        // 脚本覆盖为空 → venv 优先于全局
+        assert_eq!(resolve_interpreter(Some("  "), Some(VENV), "python"), VENV);
+        // 无 venv → 全局
+        assert_eq!(resolve_interpreter(None, None, " python "), "python");
+        assert_eq!(resolve_interpreter(None, Some("  "), " python "), "python");
 
         assert_eq!(
             resolve_cwd(Some(" W "), "g", PathBuf::from("f")),

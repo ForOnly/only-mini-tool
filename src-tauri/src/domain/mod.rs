@@ -95,15 +95,16 @@ pub use ocr_settings::{
 pub use script::{
     ScriptArgsTemplate, ScriptCreate, ScriptDto, ScriptParamDef, ScriptParamPassAs,
     ScriptParamType, ScriptPathMode, ScriptRunRequest, ScriptRunResult, ScriptSummary,
-    ScriptUpdate, ScriptsSettingsBundle, ScriptsSettingsSave,
+    ScriptUpdate, ScriptsSettingsBundle, ScriptsSettingsSave, VenvStatus,
 };
 pub use settings::{
     engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
     DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, DEFAULT_SCRIPTS_ENV_JSON,
-    DEFAULT_SCRIPTS_PYTHON_PATH, OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION,
-    SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE, SETTING_OCR_INSPECTOR_PLACEMENT,
-    SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS, SETTING_SCRIPTS_DEFAULT_WORKSPACE,
-    SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_PYTHON_PATH, SETTING_UI_THEME,
+    DEFAULT_SCRIPTS_ENV_PREFIX, DEFAULT_SCRIPTS_PYTHON_PATH, OCR_ENGINE_KEY_PREFIX,
+    OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE,
+    SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
+    SETTING_SCRIPTS_DEFAULT_WORKSPACE, SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_ENV_PREFIX,
+    SETTING_SCRIPTS_PYTHON_PATH, SETTING_UI_THEME,
 };
 
 pub fn export_all_ts(out_dir: &std::path::Path) {
@@ -130,6 +131,7 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
     ScriptUpdate::export_all().expect("export ScriptUpdate");
     ScriptsSettingsBundle::export_all().expect("export ScriptsSettingsBundle");
     ScriptsSettingsSave::export_all().expect("export ScriptsSettingsSave");
+    VenvStatus::export_all().expect("export VenvStatus");
     ScriptRunRequest::export_all().expect("export ScriptRunRequest");
     ScriptRunResult::export_all().expect("export ScriptRunResult");
 
@@ -159,6 +161,7 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
         "ScriptUpdate.ts",
         "ScriptsSettingsBundle.ts",
         "ScriptsSettingsSave.ts",
+        "VenvStatus.ts",
         "ScriptRunRequest.ts",
         "ScriptRunResult.ts",
     ] {
@@ -194,6 +197,7 @@ export type { ScriptCreate } from "./ScriptCreate";
 export type { ScriptUpdate } from "./ScriptUpdate";
 export type { ScriptsSettingsBundle } from "./ScriptsSettingsBundle";
 export type { ScriptsSettingsSave } from "./ScriptsSettingsSave";
+export type { VenvStatus } from "./VenvStatus";
 export type { ScriptRunRequest } from "./ScriptRunRequest";
 export type { ScriptRunResult } from "./ScriptRunResult";
 "#;

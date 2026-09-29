@@ -4,7 +4,7 @@ use crate::appearance::{self, AppearanceHost};
 use crate::domain::{
     AppearanceDto, OcrResult, OcrSettingsBundle, OcrSettingsSave, ScriptCreate, ScriptDto,
     ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate, ScriptsSettingsBundle,
-    ScriptsSettingsSave, SETTING_DEBUG_ENABLED, SETTING_UI_THEME,
+    ScriptsSettingsSave, VenvStatus, SETTING_DEBUG_ENABLED, SETTING_UI_THEME,
 };
 use crate::errors::AppError;
 use crate::services::log_service::LogService;
@@ -211,6 +211,16 @@ pub async fn run_script(
 pub fn cancel_script_run() -> Result<(), AppError> {
     ScriptsService::cancel_run();
     Ok(())
+}
+
+#[tauri::command]
+pub async fn create_scripts_venv(state: State<'_, AppState>) -> Result<(), AppError> {
+    ScriptsService::create_venv(&state.db).await
+}
+
+#[tauri::command]
+pub async fn scripts_venv_status(state: State<'_, AppState>) -> Result<VenvStatus, AppError> {
+    ScriptsService::venv_status(&state.db).await
 }
 
 fn require_debug(state: &State<'_, AppState>) -> Result<(), AppError> {

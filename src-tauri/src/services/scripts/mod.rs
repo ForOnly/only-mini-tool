@@ -9,7 +9,7 @@ pub mod runner;
 pub mod validate;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -19,9 +19,9 @@ use uuid::Uuid;
 
 use crate::domain::{
     ScriptCreate, ScriptDto, ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate,
-    ScriptsSettingsBundle, ScriptsSettingsSave, DEFAULT_SCRIPTS_ENV_JSON,
-    DEFAULT_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_DEFAULT_WORKSPACE, SETTING_SCRIPTS_ENV_JSON,
-    SETTING_SCRIPTS_PYTHON_PATH,
+    ScriptsSettingsBundle, ScriptsSettingsSave, VenvStatus, DEFAULT_SCRIPTS_ENV_JSON,
+    DEFAULT_SCRIPTS_ENV_PREFIX, DEFAULT_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_DEFAULT_WORKSPACE,
+    SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_ENV_PREFIX, SETTING_SCRIPTS_PYTHON_PATH,
 };
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
@@ -76,6 +76,8 @@ impl ScriptsService {
             .unwrap_or_else(|| DEFAULT_SCRIPTS_PYTHON_PATH.to_string());
         let default_workspace =
             SettingsService::get(db, SETTING_SCRIPTS_DEFAULT_WORKSPACE)?.unwrap_or_default();
+        let env_prefix = SettingsService::get(db, SETTING_SCRIPTS_ENV_PREFIX)?
+            .unwrap_or_else(|| DEFAULT_SCRIPTS_ENV_PREFIX.to_string());
         let env_raw = SettingsService::get(db, SETTING_SCRIPTS_ENV_JSON)?
             .unwrap_or_else(|| DEFAULT_SCRIPTS_ENV_JSON.to_string());
         let env: HashMap<String, String> =
@@ -85,6 +87,7 @@ impl ScriptsService {
         Ok(ScriptsSettingsBundle {
             python_path,
             default_workspace,
+            env_prefix,
             env,
         })
     }
@@ -96,6 +99,7 @@ impl ScriptsService {
                 message: "scripts.python_path is required".into(),
             });
         }
+        let env_prefix = validate::validate_env_prefix(&payload.env_prefix)?;
         let env_json =
             serde_json::to_string(&payload.env).map_err(|e| AppError::InternalError {
                 message: format!("serialize scripts.env: {e}"),
@@ -106,6 +110,7 @@ impl ScriptsService {
             SETTING_SCRIPTS_DEFAULT_WORKSPACE,
             payload.default_workspace.trim(),
         )?;
+        SettingsService::set_raw(db, SETTING_SCRIPTS_ENV_PREFIX, &env_prefix)?;
         SettingsService::set_raw(db, SETTING_SCRIPTS_ENV_JSON, &env_json)?;
         Ok(())
     }
@@ -113,6 +118,84 @@ impl ScriptsService {
     /// 取消当前运行（无运行时为无害空操作）。
     pub fn cancel_run() {
         ScriptRunRegistry::global().cancel_all();
+    }
+
+    /// 在全局默认 workspace 创建 `.venv`（复用执行内核，与脚本运行共享单飞）。
+    pub async fn create_venv(db: &Database) -> Result<(), AppError> {
+        let settings = Self::get_settings(db)?;
+        let workspace = settings.default_workspace.trim();
+        if workspace.is_empty() {
+            return Err(AppError::ValidationError {
+                message: "scripts.default_workspace is required to create a venv".into(),
+            });
+        }
+        let venv = venv_python_at(Path::new(workspace)).await;
+        if venv.is_some() {
+            return Ok(()); // 已存在：幂等
+        }
+
+        let registry = ScriptRunRegistry::global();
+        let run_id = Uuid::new_v4();
+        let Some(token) = registry.try_register(run_id) else {
+            return Err(AppError::ScriptsBusy {
+                message: "a script is already running".into(),
+            });
+        };
+        let result = Self::create_venv_registered(&settings, workspace, token).await;
+        registry.unregister(&run_id);
+        result
+    }
+
+    async fn create_venv_registered(
+        settings: &ScriptsSettingsBundle,
+        workspace: &str,
+        token: CancellationToken,
+    ) -> Result<(), AppError> {
+        let mut env: HashMap<String, String> = std::env::vars().collect();
+        for (k, v) in &settings.env {
+            env.insert(k.clone(), v.clone());
+        }
+        prepare::ensure_stdio_utf8(&mut env);
+
+        let outcome = runner::spawn_and_stream(
+            SpawnOptions {
+                interpreter: settings.python_path.trim().to_string(),
+                args: vec!["-m".into(), "venv".into(), ".venv".into()],
+                cwd: PathBuf::from(workspace),
+                env,
+                stdin_json: serde_json::json!({}),
+                timeout: Duration::from_secs(RUN_TIMEOUT_SECS),
+            },
+            token,
+        )
+        .await?;
+
+        if outcome.exit_code == Some(0) {
+            Ok(())
+        } else {
+            Err(AppError::InternalError {
+                message: format!(
+                    "python -m venv failed (exit {:?}): {}",
+                    outcome.exit_code,
+                    outcome.stderr.trim()
+                ),
+            })
+        }
+    }
+
+    /// workspace venv 状态（前端无 fs 权限，由后端报）。
+    pub async fn venv_status(db: &Database) -> Result<VenvStatus, AppError> {
+        let settings = Self::get_settings(db)?;
+        let workspace = settings.default_workspace.trim().to_string();
+        let venv_python = if workspace.is_empty() {
+            None
+        } else {
+            venv_python_at(Path::new(&workspace)).await
+        };
+        Ok(VenvStatus {
+            workspace,
+            venv_python,
+        })
     }
 
     pub async fn run(
@@ -149,17 +232,11 @@ impl ScriptsService {
 
         let effective = prepare::effective_params(&script.params_schema, &payload.params);
         validate::validate_run_params(&script.params_schema, &effective)?;
-        let projected = prepare::project_params(&script.params_schema, &effective);
-
         let settings = Self::get_settings(db)?;
-        let interpreter =
-            prepare::resolve_interpreter(script.interpreter_path.as_deref(), &settings.python_path);
-        if interpreter.is_empty() {
-            return Err(AppError::ValidationError {
-                message: "python interpreter path is empty".into(),
-            });
-        }
+        let projected =
+            prepare::project_params(&script.params_schema, &effective, &settings.env_prefix);
 
+        // 先解析 cwd，再探测其下 venv，最后定解释器（链：脚本覆盖 > venv > 全局）
         let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
         let cwd = prepare::resolve_cwd(
             script.workspace_path.as_deref(),
@@ -171,6 +248,17 @@ impl ScriptsService {
             .map_err(|e| AppError::InternalError {
                 message: format!("create workspace cwd: {e}"),
             })?;
+        let venv_python = venv_python_at(&cwd).await;
+        let interpreter = prepare::resolve_interpreter(
+            script.interpreter_path.as_deref(),
+            venv_python.as_deref(),
+            &settings.python_path,
+        );
+        if interpreter.is_empty() {
+            return Err(AppError::ValidationError {
+                message: "python interpreter path is empty".into(),
+            });
+        }
 
         let run_dir = scripts_run_dir(app)?;
         tokio::fs::create_dir_all(&run_dir)
@@ -212,6 +300,20 @@ impl ScriptsService {
             cancelled: outcome.cancelled,
             command,
         })
+    }
+}
+
+/// 探测 workspace 下 `.venv` 的解释器路径（存在才返回）。
+/// Windows `.venv/Scripts/python.exe`，Unix `.venv/bin/python`。
+async fn venv_python_at(workspace: &Path) -> Option<String> {
+    let candidate = if cfg!(windows) {
+        workspace.join(".venv").join("Scripts").join("python.exe")
+    } else {
+        workspace.join(".venv").join("bin").join("python")
+    };
+    match tokio::fs::try_exists(&candidate).await {
+        Ok(true) => Some(candidate.to_string_lossy().into_owned()),
+        _ => None,
     }
 }
 

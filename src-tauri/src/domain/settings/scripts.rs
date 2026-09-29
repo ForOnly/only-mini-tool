@@ -3,6 +3,8 @@
 pub const SETTING_SCRIPTS_PYTHON_PATH: &str = "scripts.python_path";
 pub const SETTING_SCRIPTS_DEFAULT_WORKSPACE: &str = "scripts.default_workspace";
 pub const SETTING_SCRIPTS_ENV_JSON: &str = "scripts.env_json";
+pub const SETTING_SCRIPTS_ENV_PREFIX: &str = "scripts.env_prefix";
 
 pub const DEFAULT_SCRIPTS_PYTHON_PATH: &str = "python";
 pub const DEFAULT_SCRIPTS_ENV_JSON: &str = "{}";
+pub const DEFAULT_SCRIPTS_ENV_PREFIX: &str = "PARAM_";

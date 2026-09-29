@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import AppConfirm from "@/components/common/AppConfirm.vue";
 import AppInput from "@/components/common/AppInput.vue";
 import { useMessage } from "@/composables/useMessage";
+import { useWorkbench } from "@/composables/useWorkbench";
 import { useScripts, type ScriptTemplate } from "@/tools/scripts/useScripts";
 import { formatAppError } from "@/utils/error";
 
 const { t } = useI18n();
 const { success, error } = useMessage();
+const { mainView } = useWorkbench();
 const { list, listLoaded, scriptIdNum, refreshList, createNew, rename, remove, openEditor } =
   useScripts();
 
@@ -32,6 +34,15 @@ const TEMPLATE_OPTIONS: { value: ScriptTemplate; labelKey: string }[] = [
 function report(err: unknown) {
   error(formatAppError(err, (key) => t(key)));
 }
+
+// 弹窗 Teleport 到 body：离开工具视图时关闭，避免残留在桌面页上方
+watch(mainView, (view) => {
+  if (view !== "tool") {
+    createOpen.value = false;
+    renameId.value = null;
+    deleteId.value = null;
+  }
+});
 
 onMounted(() => {
   void refreshList().catch(report);

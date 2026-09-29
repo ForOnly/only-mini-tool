@@ -11,10 +11,13 @@ const props = withDefaults(
     message?: string;
     confirmLabel?: string;
     cancelLabel?: string;
+    /** 第三动作（如「丢弃」）：渲染在取消钮左侧；不传则不渲染 */
+    neutralLabel?: string;
     danger?: boolean;
   }>(),
   {
     message: "",
+    neutralLabel: "",
     danger: false,
   },
 );
@@ -22,6 +25,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   confirm: [];
   cancel: [];
+  neutral: [];
 }>();
 
 const { t } = useI18n();
@@ -86,6 +90,14 @@ onUnmounted(() => {
           <slot />
         </div>
         <div class="actions">
+          <AppButton
+            v-if="neutralLabel"
+            variant="ghost"
+            class="neutral"
+            @click="emit('neutral')"
+          >
+            {{ neutralLabel }}
+          </AppButton>
           <AppButton variant="ghost" @click="emit('cancel')">
             {{ resolvedCancelLabel }}
           </AppButton>
@@ -151,6 +163,10 @@ onUnmounted(() => {
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-2);
+}
+
+.actions :deep(.neutral) {
+  margin-right: auto;
 }
 
 .actions :deep(.btn.danger) {

@@ -5,7 +5,12 @@ import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import AppInput from "@/components/common/AppInput.vue";
-import { getScriptsSettings, saveScriptsSettings } from "@/api/scripts";
+import {
+  createScriptsVenv,
+  getScriptsSettings,
+  getScriptsVenvStatus,
+  saveScriptsSettings,
+} from "@/api/scripts";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
 
@@ -14,8 +19,11 @@ const { success, error } = useMessage();
 
 const pythonPath = ref("python");
 const defaultWorkspace = ref("");
+const envPrefix = ref("PARAM_");
 const env = ref<{ key: string; value: string }[]>([]);
 const busy = ref(false);
+const venvCreating = ref(false);
+const venvStatus = ref<{ workspace: string; venvPython: string | null } | null>(null);
 
 const envMap = computed(() => {
   const out: Record<string, string> = {};
@@ -36,10 +44,12 @@ async function load() {
     const bundle = await getScriptsSettings();
     pythonPath.value = bundle.pythonPath || "python";
     defaultWorkspace.value = bundle.defaultWorkspace || "";
+    envPrefix.value = bundle.envPrefix || "PARAM_";
     env.value = Object.entries(bundle.env ?? {}).map(([key, value]) => ({
       key,
       value: value ?? "",
     }));
+    venvStatus.value = await getScriptsVenvStatus();
   } finally {
     busy.value = false;
   }
@@ -51,6 +61,7 @@ async function onSave() {
     await saveScriptsSettings({
       pythonPath: pythonPath.value.trim() || "python",
       defaultWorkspace: defaultWorkspace.value.trim(),
+      envPrefix: envPrefix.value.trim() || "PARAM_",
       env: envMap.value,
     });
     success(t("scripts.settingsSaved"));
@@ -58,6 +69,19 @@ async function onSave() {
     report(err);
   } finally {
     busy.value = false;
+  }
+}
+
+async function onCreateVenv() {
+  venvCreating.value = true;
+  try {
+    await createScriptsVenv();
+    venvStatus.value = await getScriptsVenvStatus();
+    success(t("scripts.venvCreated"));
+  } catch (err) {
+    report(err);
+  } finally {
+    venvCreating.value = false;
   }
 }
 
@@ -89,6 +113,11 @@ onMounted(() => {
         </AppButton>
       </div>
     </label>
+    <label class="field">
+      <span>{{ t("scripts.envPrefix") }}</span>
+      <AppInput v-model="envPrefix" :disabled="busy" :placeholder="'PARAM_'" />
+      <span class="hint">{{ t("scripts.envPrefixHint") }}</span>
+    </label>
     <div class="block">
       <div class="block-head">
         <h3>{{ t("scripts.globalEnv") }}</h3>
@@ -107,6 +136,31 @@ onMounted(() => {
           {{ t("scripts.remove") }}
         </AppButton>
       </div>
+    </div>
+    <div class="block">
+      <div class="block-head">
+        <h3>{{ t("scripts.venvTitle") }}</h3>
+        <AppButton
+          variant="ghost"
+          type="button"
+          :disabled="busy || venvCreating || !defaultWorkspace.trim()"
+          @click="onCreateVenv"
+        >
+          {{ venvCreating ? t("scripts.venvCreating") : t("scripts.venvCreate") }}
+        </AppButton>
+      </div>
+      <p class="hint">
+        <template v-if="venvStatus?.venvPython">
+          {{ t("scripts.venvReady", { path: venvStatus.venvPython }) }}
+        </template>
+        <template v-else-if="venvStatus && !venvStatus.workspace">
+          {{ t("scripts.venvNeedWorkspace") }}
+        </template>
+        <template v-else>
+          {{ t("scripts.venvNotCreated") }}
+        </template>
+      </p>
+      <p class="hint">{{ t("scripts.venvHint") }}</p>
     </div>
     <AppButton variant="primary" :disabled="busy" @click="onSave">
       {{ t("scripts.saveSettings") }}
@@ -160,5 +214,12 @@ onMounted(() => {
   margin: 0;
   font-size: var(--text-md);
   color: var(--text);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  word-break: break-all;
 }
 </style>

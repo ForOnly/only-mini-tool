@@ -30,6 +30,29 @@ pub fn validate_name(name: &str) -> Result<String, AppError> {
     Ok(trimmed.to_string())
 }
 
+/// env 参数前缀校验：非空、`^[A-Za-z_][A-Za-z0-9_]{0,31}$`（env 名安全；
+/// 禁止空前缀——裸 KEY 大写后会与真实 env 碰撞，如 `path` → `PATH`）。
+pub fn validate_env_prefix(prefix: &str) -> Result<String, AppError> {
+    let trimmed = prefix.trim();
+    let valid = {
+        let mut chars = trimmed.chars();
+        matches!(chars.next(), Some(c) if c.is_ascii_alphabetic() || c == '_')
+            && trimmed.len() <= 32
+            && trimmed
+                .chars()
+                .skip(1)
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    if !valid {
+        return Err(AppError::ValidationError {
+            message: "scripts.env_prefix must be ASCII letters/digits/underscore, start with \
+                      letter or underscore, 1-32 chars"
+                .into(),
+        });
+    }
+    Ok(trimmed.to_string())
+}
+
 /// 保存时校验参数 schema：key 字符集/去重、select 必须有 options、default 与类型匹配。
 pub fn validate_params_schema(schema: &[ScriptParamDef]) -> Result<(), AppError> {
     let mut keys = HashSet::new();
@@ -160,6 +183,32 @@ mod tests {
             validate_name("   "),
             Err(AppError::ValidationError { .. })
         ));
+    }
+
+    #[test]
+    fn env_prefix_rules() {
+        assert_eq!(validate_env_prefix(" PARAM_ ").unwrap(), "PARAM_");
+        assert_eq!(validate_env_prefix("X").unwrap(), "X");
+        assert_eq!(validate_env_prefix("_a1").unwrap(), "_a1");
+
+        for bad in [
+            "",
+            "  ",
+            "1A",
+            "PA-RAM",
+            "PA RAM",
+            "前缀",
+            "P$",
+            "P".repeat(33).as_str(),
+        ] {
+            assert!(
+                matches!(
+                    validate_env_prefix(bad),
+                    Err(AppError::ValidationError { .. })
+                ),
+                "prefix {bad:?} should be rejected"
+            );
+        }
     }
 
     #[test]

@@ -128,6 +128,7 @@ pub struct ScriptUpdate {
 pub struct ScriptsSettingsBundle {
     pub python_path: String,
     pub default_workspace: String,
+    pub env_prefix: String,
     pub env: HashMap<String, String>,
 }
 
@@ -137,7 +138,19 @@ pub struct ScriptsSettingsBundle {
 pub struct ScriptsSettingsSave {
     pub python_path: String,
     pub default_workspace: String,
+    pub env_prefix: String,
     pub env: HashMap<String, String>,
+}
+
+/// workspace venv 状态（`scripts_venv_status`）。
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, rename_all = "camelCase")]
+pub struct VenvStatus {
+    /// 全局默认 workspace（空 = 未配置）
+    pub workspace: String,
+    /// venv 解释器路径（None = 未创建）
+    pub venv_python: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
