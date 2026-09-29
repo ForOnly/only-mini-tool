@@ -117,8 +117,7 @@ onActivated(() => {
 }
 
 .workspace.placement-left.is-collapsed .inspector-slot {
-  /* 让出壳层 BackFab（约 28px + 上下间距） */
-  top: calc(var(--space-2) + 28px + var(--space-2));
+  top: var(--space-2);
   left: var(--space-2);
 }
 

@@ -8,10 +8,15 @@ import { useWorkbench } from "@/composables/useWorkbench";
 import WindowControls from "@/shell/WindowControls.vue";
 
 const { t } = useI18n();
-const { mainView, activeTool, configTool, openSettings } = useWorkbench();
+const { mainView, activeTool, configTool, openSettings, goBack } = useWorkbench();
 const { isMaximized, minimize, toggleMaximize, close } = useWindowControls();
 
 const showSettings = computed(() => mainView.value !== "settings");
+const showBack = computed(() => mainView.value !== "home");
+
+const backLabel = computed(() =>
+  mainView.value === "tool" ? t("shell.backHome") : t("settings.back"),
+);
 
 const titleText = computed(() => {
   if (mainView.value === "home") {
@@ -49,10 +54,38 @@ function onOpenSettings() {
 <template>
   <header class="titlebar" @dblclick="onTitlebarDblClick">
     <div class="leading">
-      <h1 class="title" data-tauri-drag-region>{{ titleText }}</h1>
+      <AppButton
+        v-if="showBack"
+        class="icon-btn"
+        variant="ghost"
+        :title="backLabel"
+        :aria-label="backLabel"
+        @click="goBack"
+      >
+        <!-- 弯曲回退箭头（undo 形） -->
+        <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M9 14L4 9l5-5"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            d="M4 9h10.5a5.5 5.5 0 0 1 0 11H14"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <span class="sr">{{ backLabel }}</span>
+      </AppButton>
     </div>
 
     <div class="drag" data-tauri-drag-region />
+
+    <h1 class="title" data-tauri-drag-region>{{ titleText }}</h1>
 
     <div class="trailing">
       <AppButton
@@ -96,6 +129,7 @@ function onOpenSettings() {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  position: relative;
 }
 
 .leading {
@@ -107,7 +141,14 @@ function onOpenSettings() {
   flex-shrink: 1;
 }
 
+/* 居中标题：盒子紧贴文字（fit-content），透明区不遮挡两端按钮点击 */
 .title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: fit-content;
+  max-width: calc(100% - 260px);
   margin: 0;
   padding-inline: var(--space-1);
   font-family: var(--font-display);
@@ -117,7 +158,6 @@ function onOpenSettings() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
 }
 
 .drag {
@@ -139,6 +179,16 @@ function onOpenSettings() {
   padding: var(--space-1);
   border-color: transparent;
   margin-right: var(--space-1);
+}
+
+.leading .icon-btn {
+  margin-right: 0;
+}
+
+.icon {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 
 .gear {

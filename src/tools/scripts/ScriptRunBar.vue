@@ -47,6 +47,14 @@ const elapsed = computed(() => {
   if (!props.running || props.runStartedAt == null) return null;
   return Math.max(0, Math.floor((now.value - props.runStartedAt) / 1000));
 });
+
+/** 状态文字：「未保存 · 12s」——合并展示减少折行 */
+const statusText = computed(() => {
+  const parts: string[] = [];
+  if (props.dirty) parts.push(t("scripts.dirty"));
+  if (elapsed.value != null) parts.push(t("scripts.runTimer", { secs: elapsed.value }));
+  return parts.join(" · ");
+});
 </script>
 
 <template>
@@ -55,10 +63,7 @@ const elapsed = computed(() => {
       {{ t("scripts.backToList") }}
     </AppButton>
     <div class="spacer" />
-    <span v-if="dirty" class="dirty">{{ t("scripts.dirty") }}</span>
-    <span v-if="elapsed != null" class="timer">
-      {{ t("scripts.runTimer", { secs: elapsed }) }}
-    </span>
+    <span v-if="statusText" class="status" :class="{ dirty: dirty }">{{ statusText }}</span>
     <AppButton variant="ghost" type="button" :disabled="saving || !dirty" @click="emit('save')">
       {{ t("scripts.save") }}
     </AppButton>
@@ -91,14 +96,14 @@ const elapsed = computed(() => {
   flex: 1;
 }
 
-.dirty {
-  font-size: var(--text-sm);
-  color: var(--warning, #c47f17);
-}
-
-.timer {
+.status {
   font-size: var(--text-sm);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status.dirty {
+  color: var(--warning, #c47f17);
 }
 </style>

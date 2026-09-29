@@ -2,7 +2,6 @@
 import AppMessageHost from "@/components/common/AppMessageHost.vue";
 import SettingsView from "@/settings/SettingsView.vue";
 import AppTitleBar from "@/shell/AppTitleBar.vue";
-import BackFab from "@/shell/BackFab.vue";
 import ToolConfigView from "@/shell/ToolConfigView.vue";
 import ToolLauncher from "@/shell/ToolLauncher.vue";
 import ToolStage from "@/shell/ToolStage.vue";
@@ -16,8 +15,6 @@ const { mainView } = useWorkbench();
     <AppTitleBar />
 
     <div class="body">
-      <BackFab />
-
       <Transition name="view-fade" mode="out-in">
         <ToolLauncher v-if="mainView === 'home'" key="home" class="view-root" />
         <div v-else-if="mainView === 'settings'" key="settings" class="view-root">
