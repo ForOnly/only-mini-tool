@@ -470,11 +470,8 @@ impl ScriptsService {
                 }
             }
         };
-        let interpreter = prepare::resolve_interpreter(
-            script.interpreter_path.as_deref(),
-            venv_python.as_deref(),
-            &settings.python_path,
-        );
+        let interpreter =
+            prepare::resolve_interpreter(venv_python.as_deref(), &settings.python_path);
         if interpreter.is_empty() {
             return Err(AppError::ValidationError {
                 message: "python interpreter path is empty".into(),

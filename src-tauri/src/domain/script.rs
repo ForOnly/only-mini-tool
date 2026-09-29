@@ -86,8 +86,6 @@ pub struct ScriptDto {
     pub body: String,
     #[ts(optional)]
     pub workspace_path: Option<String>,
-    #[ts(optional)]
-    pub interpreter_path: Option<String>,
     /// 绑定的命名 venv（None = 跟随全局链）。
     #[ts(optional)]
     pub venv_name: Option<String>,
@@ -118,8 +116,6 @@ pub struct ScriptUpdate {
     pub body: String,
     #[ts(optional)]
     pub workspace_path: Option<String>,
-    #[ts(optional)]
-    pub interpreter_path: Option<String>,
     #[ts(optional)]
     pub venv_name: Option<String>,
     pub env: HashMap<String, String>,

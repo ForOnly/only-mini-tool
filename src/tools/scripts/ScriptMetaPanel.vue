@@ -142,14 +142,6 @@ function onTypeChange(index: number, type: ScriptParamType) {
       </div>
     </label>
     <label class="field">
-      <span>{{ t("scripts.interpreter") }}</span>
-      <AppInput
-        :model-value="draft.interpreterPath ?? ''"
-        :placeholder="t('scripts.interpreterPlaceholder')"
-        @update:model-value="patch({ interpreterPath: $event || undefined })"
-      />
-    </label>
-    <label class="field">
       <span>{{ t("scripts.venvBind") }}</span>
       <select
         :value="draft.venvName ?? ''"

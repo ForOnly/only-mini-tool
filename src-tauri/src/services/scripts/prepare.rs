@@ -136,17 +136,13 @@ pub fn merge_env(
     env
 }
 
-/// 解释器解析：脚本覆盖 > **workspace venv python** > 全局 `scripts.python_path`。
-/// venv 候选由调用方探测（保持纯函数）；返回可能为空串（由调用方校验报错）。
-pub fn resolve_interpreter(
-    script_interpreter: Option<&str>,
-    venv_python: Option<&str>,
-    global_python: &str,
-) -> String {
-    script_interpreter
+/// 解释器解析：**venv python**（脚本绑定/全局启用/workspace `.venv` 中先命中者）
+/// 优先于全局 `scripts.python_path`。venv 候选由调用方按优先级探测（保持纯函数）；
+/// 返回可能为空串（由调用方校验报错）。
+pub fn resolve_interpreter(venv_python: Option<&str>, global_python: &str) -> String {
+    venv_python
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .or_else(|| venv_python.map(str::trim).filter(|s| !s.is_empty()))
         .unwrap_or(global_python.trim())
         .to_string()
 }
@@ -396,16 +392,11 @@ mod tests {
     #[test]
     fn interpreter_and_cwd_chains() {
         const VENV: &str = "W:\\ws\\.venv\\Scripts\\python.exe";
-        // 脚本覆盖最优先（显式覆盖赢过 venv）
-        assert_eq!(
-            resolve_interpreter(Some(" C:\\py\\x.exe "), Some(VENV), "python"),
-            "C:\\py\\x.exe"
-        );
-        // 脚本覆盖为空 → venv 优先于全局
-        assert_eq!(resolve_interpreter(Some("  "), Some(VENV), "python"), VENV);
-        // 无 venv → 全局
-        assert_eq!(resolve_interpreter(None, None, " python "), "python");
-        assert_eq!(resolve_interpreter(None, Some("  "), " python "), "python");
+        // venv 优先于全局
+        assert_eq!(resolve_interpreter(Some(VENV), "python"), VENV);
+        // 空白/缺失 venv → 全局
+        assert_eq!(resolve_interpreter(Some("  "), " python "), "python");
+        assert_eq!(resolve_interpreter(None, " python "), "python");
 
         assert_eq!(
             resolve_cwd(Some(" W "), "g", PathBuf::from("f")),

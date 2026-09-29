@@ -130,8 +130,6 @@ export default {
     description: "Description",
     workspace: "Workspace",
     workspacePlaceholder: "Empty = global default",
-    interpreter: "Interpreter override",
-    interpreterPlaceholder: "Empty = global Python path",
     browse: "Browse",
     scriptEnv: "Script env vars",
     globalEnv: "Global env vars",
@@ -184,8 +182,7 @@ export default {
     venvDeleteMessage: "This removes the full directory of \"{name}\" — irreversible.",
     venvBind: "Virtual environment",
     venvFollowGlobal: "Follow global",
-    venvBindHint:
-      "Bound venv wins over global default and workspace .venv; explicit interpreter path still wins",
+    venvBindHint: "Bound venv wins over global default and workspace .venv",
     venvHint:
       "Run chain: script binding > global default > workspace .venv > global Python; missing targets fall through silently",
     paramDefault: "Default",

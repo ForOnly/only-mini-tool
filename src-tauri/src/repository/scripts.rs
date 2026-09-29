@@ -40,8 +40,9 @@ impl ScriptsRepo {
     }
 
     pub fn get(conn: &Connection, id: i64) -> Result<ScriptDto, AppError> {
+        // interpreter_path 列仍在 DB（003 建表）但已不读不写（脚本级解释器覆盖已移除）
         conn.query_row(
-            "SELECT id, name, description, language, body, workspace_path, interpreter_path,
+            "SELECT id, name, description, language, body, workspace_path,
                     venv_name, env_json, params_schema_json, args_template_json, created_at, updated_at
              FROM scripts WHERE id = ?1",
             [id],
@@ -54,12 +55,11 @@ impl ScriptsRepo {
                     row.get::<_, String>(4)?,
                     row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?,
-                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, String>(7)?,
                     row.get::<_, String>(8)?,
                     row.get::<_, String>(9)?,
                     row.get::<_, String>(10)?,
                     row.get::<_, String>(11)?,
-                    row.get::<_, String>(12)?,
                 ))
             },
         )
@@ -75,7 +75,6 @@ impl ScriptsRepo {
                 language,
                 body,
                 workspace_path,
-                interpreter_path,
                 venv_name,
                 env_json,
                 params_schema_json,
@@ -90,7 +89,6 @@ impl ScriptsRepo {
                     language,
                     body,
                     workspace_path,
-                    interpreter_path,
                     venv_name,
                     env: parse_env_map(&env_json)?,
                     params_schema: parse_params_schema(&params_schema_json)?,
@@ -146,7 +144,6 @@ impl ScriptsRepo {
             })?;
 
         let workspace = normalize_opt_path(&payload.workspace_path);
-        let interpreter = normalize_opt_path(&payload.interpreter_path);
 
         let changed = conn
             .execute(
@@ -155,19 +152,17 @@ impl ScriptsRepo {
                     description = ?2,
                     body = ?3,
                     workspace_path = ?4,
-                    interpreter_path = ?5,
-                    venv_name = ?6,
-                    env_json = ?7,
-                    params_schema_json = ?8,
-                    args_template_json = ?9,
+                    venv_name = ?5,
+                    env_json = ?6,
+                    params_schema_json = ?7,
+                    args_template_json = ?8,
                     updated_at = datetime('now')
-                 WHERE id = ?10",
+                 WHERE id = ?9",
                 params![
                     payload.name,
                     payload.description,
                     payload.body.as_str(),
                     workspace,
-                    interpreter,
                     normalize_opt_name(&payload.venv_name),
                     env_json,
                     params_schema_json,
