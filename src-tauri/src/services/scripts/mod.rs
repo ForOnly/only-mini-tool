@@ -1,6 +1,7 @@
 //! 脚本库：CRUD + Python 进程执行（无沙盒）。
 
 pub mod prepare;
+pub mod runner;
 pub mod validate;
 
 use std::collections::HashMap;
