@@ -88,6 +88,9 @@ pub struct ScriptDto {
     pub workspace_path: Option<String>,
     #[ts(optional)]
     pub interpreter_path: Option<String>,
+    /// 绑定的命名 venv（None = 跟随全局链）。
+    #[ts(optional)]
+    pub venv_name: Option<String>,
     pub env: HashMap<String, String>,
     pub params_schema: Vec<ScriptParamDef>,
     pub args_template: ScriptArgsTemplate,
@@ -117,6 +120,8 @@ pub struct ScriptUpdate {
     pub workspace_path: Option<String>,
     #[ts(optional)]
     pub interpreter_path: Option<String>,
+    #[ts(optional)]
+    pub venv_name: Option<String>,
     pub env: HashMap<String, String>,
     pub params_schema: Vec<ScriptParamDef>,
     pub args_template: ScriptArgsTemplate,
@@ -129,6 +134,8 @@ pub struct ScriptsSettingsBundle {
     pub python_path: String,
     pub default_workspace: String,
     pub env_prefix: String,
+    /// 全局启用的命名 venv（空 = 未启用）。
+    pub venv: String,
     pub env: HashMap<String, String>,
 }
 
@@ -139,18 +146,19 @@ pub struct ScriptsSettingsSave {
     pub python_path: String,
     pub default_workspace: String,
     pub env_prefix: String,
+    pub venv: String,
     pub env: HashMap<String, String>,
 }
 
-/// workspace venv 状态（`scripts_venv_status`）。
+/// venv 列表条目（`list_script_venvs`）。
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename_all = "camelCase")]
-pub struct VenvStatus {
-    /// 全局默认 workspace（空 = 未配置）
-    pub workspace: String,
-    /// venv 解释器路径（None = 未创建）
-    pub venv_python: Option<String>,
+pub struct ScriptVenvSummary {
+    pub name: String,
+    pub python_path: String,
+    /// true = 默认 workspace 下的 `.venv`（自动探测条目，非托管命名 venv）。
+    pub workspace: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

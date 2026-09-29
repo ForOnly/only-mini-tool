@@ -9,7 +9,7 @@ pub mod runner;
 pub mod validate;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -19,13 +19,14 @@ use uuid::Uuid;
 
 use crate::domain::{
     ScriptCreate, ScriptDto, ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate,
-    ScriptsSettingsBundle, ScriptsSettingsSave, VenvStatus, DEFAULT_SCRIPTS_ENV_JSON,
+    ScriptVenvSummary, ScriptsSettingsBundle, ScriptsSettingsSave, DEFAULT_SCRIPTS_ENV_JSON,
     DEFAULT_SCRIPTS_ENV_PREFIX, DEFAULT_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_DEFAULT_WORKSPACE,
     SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_ENV_PREFIX, SETTING_SCRIPTS_PYTHON_PATH,
+    SETTING_SCRIPTS_VENV,
 };
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
-use crate::infrastructure::filesystem::scripts_run_dir;
+use crate::infrastructure::filesystem::{scripts_run_dir, venvs_dir};
 use crate::repository::scripts::ScriptsRepo;
 use crate::services::scripts::prepare::TempScriptGuard;
 use crate::services::scripts::runner::{ScriptRunRegistry, SpawnOptions};
@@ -51,7 +52,8 @@ impl ScriptsService {
         db.with_conn(|conn| ScriptsRepo::create(conn, &payload))
     }
 
-    pub fn update(
+    pub async fn update(
+        app: &AppHandle,
         db: &Database,
         id: i64,
         mut payload: ScriptUpdate,
@@ -59,6 +61,21 @@ impl ScriptsService {
         payload.name = validate::validate_name(&payload.name)?;
         payload.description = payload.description.trim().to_string();
         validate::validate_params_schema(&payload.params_schema)?;
+        // venv 绑定：非空须名称合法且 venv 存在（防拼写错误静默回落）
+        if let Some(venv) = payload
+            .venv_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            let name = validate::validate_venv_name(venv)?;
+            if named_venv_python(app, &name).await.is_none() {
+                return Err(AppError::ValidationError {
+                    message: format!("venv not found: {name}"),
+                });
+            }
+            payload.venv_name = Some(name);
+        }
         db.with_conn(|conn| ScriptsRepo::update(conn, id, &payload))
     }
 
@@ -78,6 +95,7 @@ impl ScriptsService {
             SettingsService::get(db, SETTING_SCRIPTS_DEFAULT_WORKSPACE)?.unwrap_or_default();
         let env_prefix = SettingsService::get(db, SETTING_SCRIPTS_ENV_PREFIX)?
             .unwrap_or_else(|| DEFAULT_SCRIPTS_ENV_PREFIX.to_string());
+        let venv = SettingsService::get(db, SETTING_SCRIPTS_VENV)?.unwrap_or_default();
         let env_raw = SettingsService::get(db, SETTING_SCRIPTS_ENV_JSON)?
             .unwrap_or_else(|| DEFAULT_SCRIPTS_ENV_JSON.to_string());
         let env: HashMap<String, String> =
@@ -88,6 +106,7 @@ impl ScriptsService {
             python_path,
             default_workspace,
             env_prefix,
+            venv,
             env,
         })
     }
@@ -100,6 +119,11 @@ impl ScriptsService {
             });
         }
         let env_prefix = validate::validate_env_prefix(&payload.env_prefix)?;
+        // 全局启用 venv：仅校验名称合法（不校验存在性——运行时解析容错回落）
+        let venv = payload.venv.trim();
+        if !venv.is_empty() {
+            validate::validate_venv_name(venv)?;
+        }
         let env_json =
             serde_json::to_string(&payload.env).map_err(|e| AppError::InternalError {
                 message: format!("serialize scripts.env: {e}"),
@@ -111,6 +135,7 @@ impl ScriptsService {
             payload.default_workspace.trim(),
         )?;
         SettingsService::set_raw(db, SETTING_SCRIPTS_ENV_PREFIX, &env_prefix)?;
+        SettingsService::set_raw(db, SETTING_SCRIPTS_VENV, venv)?;
         SettingsService::set_raw(db, SETTING_SCRIPTS_ENV_JSON, &env_json)?;
         Ok(())
     }
@@ -129,11 +154,39 @@ impl ScriptsService {
                 message: "scripts.default_workspace is required to create a venv".into(),
             });
         }
-        let venv = venv_python_at(Path::new(workspace)).await;
-        if venv.is_some() {
+        let dir = Path::new(workspace).join(".venv");
+        if python_exists(&dir).await.is_some() {
             return Ok(()); // 已存在：幂等
         }
+        Self::spawn_venv_create(&settings, &dir).await
+    }
 
+    /// 创建命名 venv（工具托管 `venvs/<name>/`）。
+    pub async fn create_named_venv(
+        app: &AppHandle,
+        db: &Database,
+        name: &str,
+    ) -> Result<(), AppError> {
+        let name = validate::validate_venv_name(name)?;
+        let settings = Self::get_settings(db)?;
+        let root = venvs_dir(app)?;
+        tokio::fs::create_dir_all(&root)
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("create venvs dir: {e}"),
+            })?;
+        let dir = root.join(&name);
+        if python_exists(&dir).await.is_some() {
+            return Ok(()); // 已存在：幂等
+        }
+        Self::spawn_venv_create(&settings, &dir).await
+    }
+
+    /// 单飞守卫下执行 `python -m venv <dir>`（与脚本运行共享 registry 互斥）。
+    async fn spawn_venv_create(
+        settings: &ScriptsSettingsBundle,
+        dir: &Path,
+    ) -> Result<(), AppError> {
         let registry = ScriptRunRegistry::global();
         let run_id = Uuid::new_v4();
         let Some(token) = registry.try_register(run_id) else {
@@ -141,14 +194,14 @@ impl ScriptsService {
                 message: "a script is already running".into(),
             });
         };
-        let result = Self::create_venv_registered(&settings, workspace, token).await;
+        let result = Self::venv_create_registered(settings, dir, token).await;
         registry.unregister(&run_id);
         result
     }
 
-    async fn create_venv_registered(
+    async fn venv_create_registered(
         settings: &ScriptsSettingsBundle,
-        workspace: &str,
+        dir: &Path,
         token: CancellationToken,
     ) -> Result<(), AppError> {
         let mut env: HashMap<String, String> = std::env::vars().collect();
@@ -157,11 +210,26 @@ impl ScriptsService {
         }
         prepare::ensure_stdio_utf8(&mut env);
 
+        // cwd 取目标父目录（workspace 场景即 workspace 本身）；不存在则创建
+        let cwd = dir
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| dir.to_path_buf());
+        tokio::fs::create_dir_all(&cwd)
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("create venv parent dir: {e}"),
+            })?;
+
         let outcome = runner::spawn_and_stream(
             SpawnOptions {
                 interpreter: settings.python_path.trim().to_string(),
-                args: vec!["-m".into(), "venv".into(), ".venv".into()],
-                cwd: PathBuf::from(workspace),
+                args: vec![
+                    "-m".into(),
+                    "venv".into(),
+                    dir.to_string_lossy().into_owned(),
+                ],
+                cwd,
                 env,
                 stdin_json: serde_json::json!({}),
                 timeout: Duration::from_secs(RUN_TIMEOUT_SECS),
@@ -183,19 +251,113 @@ impl ScriptsService {
         }
     }
 
-    /// workspace venv 状态（前端无 fs 权限，由后端报）。
-    pub async fn venv_status(db: &Database) -> Result<VenvStatus, AppError> {
+    /// venv 列表：托管 `venvs/` 扫描 + 默认 workspace `.venv` 特殊条目。
+    pub async fn list_venvs(
+        app: &AppHandle,
+        db: &Database,
+    ) -> Result<Vec<ScriptVenvSummary>, AppError> {
+        let mut out = Vec::new();
+        let root = venvs_dir(app)?;
+        if let Ok(mut entries) = tokio::fs::read_dir(&root).await {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if validate::validate_venv_name(&name).is_err() {
+                    continue; // 非法目录名不纳入管理
+                }
+                if let Some(py) = python_exists(&entry.path()).await {
+                    out.push(ScriptVenvSummary {
+                        name,
+                        python_path: py,
+                        workspace: false,
+                    });
+                }
+            }
+        }
+        out.sort_by(|a, b| a.name.cmp(&b.name));
+
         let settings = Self::get_settings(db)?;
-        let workspace = settings.default_workspace.trim().to_string();
-        let venv_python = if workspace.is_empty() {
-            None
-        } else {
-            venv_python_at(Path::new(&workspace)).await
-        };
-        Ok(VenvStatus {
-            workspace,
-            venv_python,
-        })
+        let ws = settings.default_workspace.trim();
+        if !ws.is_empty() {
+            if let Some(py) = venv_python_at(Path::new(ws)).await {
+                out.push(ScriptVenvSummary {
+                    name: ".venv".into(),
+                    python_path: py,
+                    workspace: true,
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// 删除 venv。`name == ".venv"` 删默认 workspace 下的 `.venv`（特殊条目）；
+    /// 命名 venv 三重防护：白名单、canonicalize 仍在 `venvs/` 前缀下、
+    /// 引用检查（脚本绑定或全局启用时拒绝）。
+    pub async fn delete_venv(app: &AppHandle, db: &Database, name: &str) -> Result<(), AppError> {
+        if name == ".venv" {
+            let settings = Self::get_settings(db)?;
+            let ws = settings.default_workspace.trim();
+            if ws.is_empty() {
+                return Err(AppError::ValidationError {
+                    message: "scripts.default_workspace is not configured".into(),
+                });
+            }
+            let dir = Path::new(ws).join(".venv");
+            tokio::fs::remove_dir_all(&dir)
+                .await
+                .map_err(|e| AppError::InternalError {
+                    message: format!("remove workspace .venv: {e}"),
+                })?;
+            return Ok(());
+        }
+
+        let name = validate::validate_venv_name(name)?;
+
+        // 引用检查：脚本绑定
+        let bound: Vec<String> = db.with_conn(|conn| ScriptsRepo::names_by_venv(conn, &name))?;
+        if !bound.is_empty() {
+            return Err(AppError::ValidationError {
+                message: format!(
+                    "venv \"{name}\" is bound to scripts: {} (unbind them first)",
+                    bound.join(", ")
+                ),
+            });
+        }
+        // 引用检查：全局启用
+        let settings = Self::get_settings(db)?;
+        if settings.venv.trim() == name {
+            return Err(AppError::ValidationError {
+                message: format!(
+                    "venv \"{name}\" is globally enabled (disable it in settings first)"
+                ),
+            });
+        }
+
+        // 路径防护：canonicalize 后必须仍在 venvs 根下
+        let root = venvs_dir(app)?;
+        let dir = root.join(&name);
+        let root_canon =
+            tokio::fs::canonicalize(&root)
+                .await
+                .map_err(|e| AppError::InternalError {
+                    message: format!("resolve venvs dir: {e}"),
+                })?;
+        let dir_canon =
+            tokio::fs::canonicalize(&dir)
+                .await
+                .map_err(|_| AppError::ValidationError {
+                    message: format!("venv not found: {name}"),
+                })?;
+        if !dir_canon.starts_with(&root_canon) {
+            return Err(AppError::ValidationError {
+                message: "venv path escapes the managed venvs directory".into(),
+            });
+        }
+        tokio::fs::remove_dir_all(&dir_canon)
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("remove venv: {e}"),
+            })?;
+        Ok(())
     }
 
     pub async fn run(
@@ -248,7 +410,26 @@ impl ScriptsService {
             .map_err(|e| AppError::InternalError {
                 message: format!("create workspace cwd: {e}"),
             })?;
-        let venv_python = venv_python_at(&cwd).await;
+        // venv 候选（5 级链的 venv 部分）：脚本绑定 > 全局启用 > workspace .venv；
+        // 任一级指向的 venv 不存在则静默回落下级（解析容错）
+        let bound_venv = script
+            .venv_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let venv_python = match bound_venv {
+            Some(name) => named_venv_python(app, name).await,
+            None => {
+                let global_venv = settings.venv.trim();
+                if !global_venv.is_empty() {
+                    named_venv_python(app, global_venv)
+                        .await
+                        .or(venv_python_at(&cwd).await)
+                } else {
+                    venv_python_at(&cwd).await
+                }
+            }
+        };
         let interpreter = prepare::resolve_interpreter(
             script.interpreter_path.as_deref(),
             venv_python.as_deref(),
@@ -304,17 +485,27 @@ impl ScriptsService {
 }
 
 /// 探测 workspace 下 `.venv` 的解释器路径（存在才返回）。
-/// Windows `.venv/Scripts/python.exe`，Unix `.venv/bin/python`。
 async fn venv_python_at(workspace: &Path) -> Option<String> {
+    python_exists(&workspace.join(".venv")).await
+}
+
+/// 探测 venv 根目录下的平台 python 可执行（存在才返回路径字符串）。
+async fn python_exists(venv_root: &Path) -> Option<String> {
     let candidate = if cfg!(windows) {
-        workspace.join(".venv").join("Scripts").join("python.exe")
+        venv_root.join("Scripts").join("python.exe")
     } else {
-        workspace.join(".venv").join("bin").join("python")
+        venv_root.join("bin").join("python")
     };
     match tokio::fs::try_exists(&candidate).await {
         Ok(true) => Some(candidate.to_string_lossy().into_owned()),
         _ => None,
     }
+}
+
+/// 命名 venv 的解释器路径（`venvs/<name>/`，存在才返回）。
+async fn named_venv_python(app: &AppHandle, name: &str) -> Option<String> {
+    let root = venvs_dir(app).ok()?;
+    python_exists(&root.join(name)).await
 }
 
 /// 下次运行前清理孤儿临时脚本（app 崩溃/断电残留）。

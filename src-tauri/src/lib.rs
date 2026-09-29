@@ -63,7 +63,9 @@ pub fn run() {
             commands::run_script,
             commands::cancel_script_run,
             commands::create_scripts_venv,
-            commands::scripts_venv_status,
+            commands::create_script_venv,
+            commands::list_script_venvs,
+            commands::delete_script_venv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

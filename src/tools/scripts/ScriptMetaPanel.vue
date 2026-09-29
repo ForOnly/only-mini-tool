@@ -9,6 +9,8 @@ import type { ScriptDto, ScriptParamDef, ScriptParamType } from "@/api/types";
 
 const props = defineProps<{
   draft: ScriptDto;
+  /** 可绑定的命名 venv 列表（EditorPage 加载传入） */
+  venvs: { name: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -146,6 +148,17 @@ function onTypeChange(index: number, type: ScriptParamType) {
         :placeholder="t('scripts.interpreterPlaceholder')"
         @update:model-value="patch({ interpreterPath: $event || undefined })"
       />
+    </label>
+    <label class="field">
+      <span>{{ t("scripts.venvBind") }}</span>
+      <select
+        :value="draft.venvName ?? ''"
+        @change="patch({ venvName: ($event.target as HTMLSelectElement).value || undefined })"
+      >
+        <option value="">{{ t("scripts.venvFollowGlobal") }}</option>
+        <option v-for="v in venvs" :key="v.name" :value="v.name">{{ v.name }}</option>
+      </select>
+      <span class="hint">{{ t("scripts.venvBindHint") }}</span>
     </label>
 
     <div class="block">
@@ -308,6 +321,12 @@ function onTypeChange(index: number, type: ScriptParamType) {
   flex-direction: column;
   gap: var(--space-1);
   font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-xs, 12px);
   color: var(--text-muted);
 }
 

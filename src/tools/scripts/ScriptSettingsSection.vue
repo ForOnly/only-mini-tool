@@ -4,13 +4,18 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
+import AppConfirm from "@/components/common/AppConfirm.vue";
 import AppInput from "@/components/common/AppInput.vue";
 import {
+  createScriptVenv,
   createScriptsVenv,
+  deleteScriptVenv,
   getScriptsSettings,
-  getScriptsVenvStatus,
+  listScriptVenvs,
   saveScriptsSettings,
 } from "@/api/scripts";
+import { setSetting } from "@/api/settings";
+import type { ScriptVenvSummary } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
 
@@ -20,10 +25,13 @@ const { success, error } = useMessage();
 const pythonPath = ref("python");
 const defaultWorkspace = ref("");
 const envPrefix = ref("PARAM_");
+const activeVenv = ref("");
 const env = ref<{ key: string; value: string }[]>([]);
 const busy = ref(false);
 const venvCreating = ref(false);
-const venvStatus = ref<{ workspace: string; venvPython: string | null } | null>(null);
+const venvs = ref<ScriptVenvSummary[]>([]);
+const newVenvName = ref("");
+const deleteVenvName = ref<string | null>(null);
 
 const envMap = computed(() => {
   const out: Record<string, string> = {};
@@ -38,6 +46,10 @@ function report(err: unknown) {
   error(formatAppError(err, (key) => t(key)));
 }
 
+async function loadVenvs() {
+  venvs.value = await listScriptVenvs();
+}
+
 async function load() {
   busy.value = true;
   try {
@@ -45,11 +57,12 @@ async function load() {
     pythonPath.value = bundle.pythonPath || "python";
     defaultWorkspace.value = bundle.defaultWorkspace || "";
     envPrefix.value = bundle.envPrefix || "PARAM_";
+    activeVenv.value = bundle.venv || "";
     env.value = Object.entries(bundle.env ?? {}).map(([key, value]) => ({
       key,
       value: value ?? "",
     }));
-    venvStatus.value = await getScriptsVenvStatus();
+    await loadVenvs();
   } finally {
     busy.value = false;
   }
@@ -62,6 +75,7 @@ async function onSave() {
       pythonPath: pythonPath.value.trim() || "python",
       defaultWorkspace: defaultWorkspace.value.trim(),
       envPrefix: envPrefix.value.trim() || "PARAM_",
+      venv: activeVenv.value,
       env: envMap.value,
     });
     success(t("scripts.settingsSaved"));
@@ -72,16 +86,58 @@ async function onSave() {
   }
 }
 
+/** 设为默认：单键写入，不连带表单中未保存的其他字段 */
+async function onSetDefaultVenv(name: string) {
+  const next = activeVenv.value === name ? "" : name;
+  try {
+    await setSetting("scripts.venv", next);
+    activeVenv.value = next;
+  } catch (err) {
+    report(err);
+  }
+}
+
 async function onCreateVenv() {
+  const name = newVenvName.value.trim();
+  if (!name) return;
   venvCreating.value = true;
   try {
-    await createScriptsVenv();
-    venvStatus.value = await getScriptsVenvStatus();
+    await createScriptVenv(name);
+    newVenvName.value = "";
+    await loadVenvs();
     success(t("scripts.venvCreated"));
   } catch (err) {
     report(err);
   } finally {
     venvCreating.value = false;
+  }
+}
+
+/** workspace `.venv` 快捷创建（等价列表中该条目的创建） */
+async function onCreateWorkspaceVenv() {
+  venvCreating.value = true;
+  try {
+    await createScriptsVenv();
+    await loadVenvs();
+    success(t("scripts.venvCreated"));
+  } catch (err) {
+    report(err);
+  } finally {
+    venvCreating.value = false;
+  }
+}
+
+async function confirmDeleteVenv() {
+  const name = deleteVenvName.value;
+  deleteVenvName.value = null;
+  if (name == null) return;
+  try {
+    await deleteScriptVenv(name);
+    if (activeVenv.value === name) activeVenv.value = "";
+    await loadVenvs();
+    success(t("scripts.venvDeleted"));
+  } catch (err) {
+    report(err);
   }
 }
 
@@ -140,31 +196,81 @@ onMounted(() => {
     <div class="block">
       <div class="block-head">
         <h3>{{ t("scripts.venvTitle") }}</h3>
-        <AppButton
-          variant="ghost"
-          type="button"
-          :disabled="busy || venvCreating || !defaultWorkspace.trim()"
-          @click="onCreateVenv"
-        >
-          {{ venvCreating ? t("scripts.venvCreating") : t("scripts.venvCreate") }}
-        </AppButton>
+        <div class="row">
+          <AppInput
+            v-model="newVenvName"
+            :placeholder="t('scripts.venvNamePlaceholder')"
+            :disabled="venvCreating"
+            class="venv-name-input"
+            @keydown.enter.prevent="onCreateVenv"
+          />
+          <AppButton
+            variant="ghost"
+            type="button"
+            :disabled="venvCreating || !newVenvName.trim()"
+            @click="onCreateVenv"
+          >
+            {{ venvCreating ? t("scripts.venvCreating") : t("scripts.venvCreate") }}
+          </AppButton>
+        </div>
       </div>
-      <p class="hint">
-        <template v-if="venvStatus?.venvPython">
-          {{ t("scripts.venvReady", { path: venvStatus.venvPython }) }}
-        </template>
-        <template v-else-if="venvStatus && !venvStatus.workspace">
-          {{ t("scripts.venvNeedWorkspace") }}
-        </template>
-        <template v-else>
-          {{ t("scripts.venvNotCreated") }}
-        </template>
-      </p>
+      <p v-if="!venvs.length" class="hint">{{ t("scripts.venvNotCreated") }}</p>
+      <AppButton
+        v-if="defaultWorkspace.trim() && !venvs.some((v) => v.workspace)"
+        variant="ghost"
+        type="button"
+        :disabled="venvCreating"
+        @click="onCreateWorkspaceVenv"
+      >
+        {{ venvCreating ? t("scripts.venvCreating") : t("scripts.venvCreateWorkspace") }}
+      </AppButton>
+      <div v-for="v in venvs" :key="v.name" class="venv-row">
+        <div class="venv-main">
+          <span class="venv-name">
+            {{ v.name }}<template v-if="v.workspace">（workspace）</template>
+          </span>
+          <span class="venv-path">{{ v.pythonPath }}</span>
+        </div>
+        <div class="row">
+          <AppButton
+            v-if="!v.workspace"
+            variant="ghost"
+            type="button"
+            @click="onSetDefaultVenv(v.name)"
+          >
+            {{
+              activeVenv === v.name
+                ? t("scripts.venvDisableDefault")
+                : t("scripts.venvSetDefault")
+            }}
+          </AppButton>
+          <AppButton variant="ghost" type="button" @click="deleteVenvName = v.name">
+            {{ t("scripts.venvDelete") }}
+          </AppButton>
+        </div>
+      </div>
       <p class="hint">{{ t("scripts.venvHint") }}</p>
+      <p class="hint">
+        <template v-if="activeVenv">
+          {{ t("scripts.venvActive", { name: activeVenv }) }}
+        </template>
+        <template v-else>{{ t("scripts.venvNoneActive") }}</template>
+      </p>
     </div>
     <AppButton variant="primary" :disabled="busy" @click="onSave">
       {{ t("scripts.saveSettings") }}
     </AppButton>
+
+    <AppConfirm
+      :open="deleteVenvName != null"
+      :title="t('scripts.venvDeleteTitle')"
+      :message="t('scripts.venvDeleteMessage', { name: deleteVenvName ?? '' })"
+      :confirm-label="t('scripts.venvDelete')"
+      :cancel-label="t('common.cancel')"
+      danger
+      @confirm="confirmDeleteVenv"
+      @cancel="deleteVenvName = null"
+    />
   </section>
 </template>
 
@@ -208,12 +314,49 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .block-head h3 {
   margin: 0;
   font-size: var(--text-md);
   color: var(--text);
+}
+
+.venv-name-input {
+  min-width: 160px;
+}
+
+.venv-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.venv-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.venv-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.venv-path {
+  font-size: var(--text-xs, 12px);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hint {

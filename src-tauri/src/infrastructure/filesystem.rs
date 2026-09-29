@@ -28,6 +28,11 @@ pub fn scripts_run_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(app_cache_dir(app)?.join("scripts-run"))
 }
 
+/// 命名 venv 托管根目录（工具所有权：删除只碰此目录下内容）。
+pub fn venvs_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    Ok(app_data_dir(app)?.join("venvs"))
+}
+
 pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(app_data_dir(app)?.join("logs"))
 }
@@ -41,6 +46,7 @@ pub fn ensure_dirs(app: &AppHandle) -> Result<(), AppError> {
     let logs = logs_dir(app)?;
     let ocr = ocr_temp_dir(app)?;
     let scripts = scripts_run_dir(app)?;
+    let venvs = venvs_dir(app)?;
     std::fs::create_dir_all(&data).map_err(|error| AppError::InternalError {
         message: format!("failed to create data dir: {error}"),
     })?;
@@ -52,6 +58,9 @@ pub fn ensure_dirs(app: &AppHandle) -> Result<(), AppError> {
     })?;
     std::fs::create_dir_all(&scripts).map_err(|error| AppError::InternalError {
         message: format!("failed to create scripts run dir: {error}"),
+    })?;
+    std::fs::create_dir_all(&venvs).map_err(|error| AppError::InternalError {
+        message: format!("failed to create venvs dir: {error}"),
     })?;
     Ok(())
 }

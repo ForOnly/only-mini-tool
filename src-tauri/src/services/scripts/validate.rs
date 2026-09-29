@@ -53,6 +53,22 @@ pub fn validate_env_prefix(prefix: &str) -> Result<String, AppError> {
     Ok(trimmed.to_string())
 }
 
+/// 命名 venv 名称校验：`^[A-Za-z0-9_-]{1,64}$`（白名单即防路径穿越）。
+pub fn validate_venv_name(name: &str) -> Result<String, AppError> {
+    let trimmed = name.trim();
+    let valid = !trimmed.is_empty()
+        && trimmed.len() <= 64
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if !valid {
+        return Err(AppError::ValidationError {
+            message: "venv name must be ASCII letters/digits/underscore/hyphen, 1-64 chars".into(),
+        });
+    }
+    Ok(trimmed.to_string())
+}
+
 /// 保存时校验参数 schema：key 字符集/去重、select 必须有 options、default 与类型匹配。
 pub fn validate_params_schema(schema: &[ScriptParamDef]) -> Result<(), AppError> {
     let mut keys = HashSet::new();
@@ -207,6 +223,32 @@ mod tests {
                     Err(AppError::ValidationError { .. })
                 ),
                 "prefix {bad:?} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn venv_name_rules() {
+        assert_eq!(validate_venv_name(" web-scraper ").unwrap(), "web-scraper");
+        assert_eq!(validate_venv_name("a").unwrap(), "a");
+        assert_eq!(validate_venv_name("_1").unwrap(), "_1");
+
+        for bad in [
+            "",
+            "  ",
+            "a/b",
+            "..",
+            "a b",
+            "名",
+            "a$b",
+            "a".repeat(65).as_str(),
+        ] {
+            assert!(
+                matches!(
+                    validate_venv_name(bad),
+                    Err(AppError::ValidationError { .. })
+                ),
+                "venv name {bad:?} should be rejected"
             );
         }
     }

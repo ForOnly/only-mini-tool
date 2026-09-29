@@ -9,7 +9,7 @@ import type {
   ScriptUpdate,
   ScriptsSettingsBundle,
   ScriptsSettingsSave,
-  VenvStatus,
+  ScriptVenvSummary,
 } from "./types";
 
 /** ts-rs 将 i64 标成 bigint，IPC JSON 实际为 number。 */
@@ -59,6 +59,14 @@ export function createScriptsVenv(): Promise<void> {
   return invoke("create_scripts_venv");
 }
 
-export function getScriptsVenvStatus(): Promise<VenvStatus> {
-  return invoke<VenvStatus>("scripts_venv_status");
+export function createScriptVenv(name: string): Promise<void> {
+  return invoke("create_script_venv", { name });
+}
+
+export function listScriptVenvs(): Promise<ScriptVenvSummary[]> {
+  return invoke<ScriptVenvSummary[]>("list_script_venvs");
+}
+
+export function deleteScriptVenv(name: string): Promise<void> {
+  return invoke("delete_script_venv", { name });
 }

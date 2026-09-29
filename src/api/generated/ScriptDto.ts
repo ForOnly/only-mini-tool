@@ -2,4 +2,8 @@
 import type { ScriptArgsTemplate } from "./ScriptArgsTemplate";
 import type { ScriptParamDef } from "./ScriptParamDef";
 
-export type ScriptDto = { id: bigint, name: string, description: string, language: string, body: string, workspacePath?: string, interpreterPath?: string, env: { [key in string]?: string }, paramsSchema: Array<ScriptParamDef>, argsTemplate: ScriptArgsTemplate, createdAt: string, updatedAt: string, };
+export type ScriptDto = { id: bigint, name: string, description: string, language: string, body: string, workspacePath?: string, interpreterPath?: string, 
+/**
+ * 绑定的命名 venv（None = 跟随全局链）。
+ */
+venvName?: string, env: { [key in string]?: string }, paramsSchema: Array<ScriptParamDef>, argsTemplate: ScriptArgsTemplate, createdAt: string, updatedAt: string, };

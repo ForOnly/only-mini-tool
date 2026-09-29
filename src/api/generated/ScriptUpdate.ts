@@ -2,4 +2,4 @@
 import type { ScriptArgsTemplate } from "./ScriptArgsTemplate";
 import type { ScriptParamDef } from "./ScriptParamDef";
 
-export type ScriptUpdate = { name: string, description: string, body: string, workspacePath?: string, interpreterPath?: string, env: { [key in string]?: string }, paramsSchema: Array<ScriptParamDef>, argsTemplate: ScriptArgsTemplate, };
+export type ScriptUpdate = { name: string, description: string, body: string, workspacePath?: string, interpreterPath?: string, venvName?: string, env: { [key in string]?: string }, paramsSchema: Array<ScriptParamDef>, argsTemplate: ScriptArgsTemplate, };

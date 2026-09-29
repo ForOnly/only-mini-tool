@@ -23,6 +23,6 @@ export type {
   ScriptUpdate,
   ScriptsSettingsBundle,
   ScriptsSettingsSave,
+  ScriptVenvSummary,
   UiTheme,
-  VenvStatus,
 } from "./generated";

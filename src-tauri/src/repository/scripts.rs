@@ -42,7 +42,7 @@ impl ScriptsRepo {
     pub fn get(conn: &Connection, id: i64) -> Result<ScriptDto, AppError> {
         conn.query_row(
             "SELECT id, name, description, language, body, workspace_path, interpreter_path,
-                    env_json, params_schema_json, args_template_json, created_at, updated_at
+                    venv_name, env_json, params_schema_json, args_template_json, created_at, updated_at
              FROM scripts WHERE id = ?1",
             [id],
             |row| {
@@ -54,11 +54,12 @@ impl ScriptsRepo {
                     row.get::<_, String>(4)?,
                     row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?,
-                    row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(7)?,
                     row.get::<_, String>(8)?,
                     row.get::<_, String>(9)?,
                     row.get::<_, String>(10)?,
                     row.get::<_, String>(11)?,
+                    row.get::<_, String>(12)?,
                 ))
             },
         )
@@ -75,6 +76,7 @@ impl ScriptsRepo {
                 body,
                 workspace_path,
                 interpreter_path,
+                venv_name,
                 env_json,
                 params_schema_json,
                 args_template_json,
@@ -89,6 +91,7 @@ impl ScriptsRepo {
                     body,
                     workspace_path,
                     interpreter_path,
+                    venv_name,
                     env: parse_env_map(&env_json)?,
                     params_schema: parse_params_schema(&params_schema_json)?,
                     args_template: parse_args_template(&args_template_json)?,
@@ -153,17 +156,19 @@ impl ScriptsRepo {
                     body = ?3,
                     workspace_path = ?4,
                     interpreter_path = ?5,
-                    env_json = ?6,
-                    params_schema_json = ?7,
-                    args_template_json = ?8,
+                    venv_name = ?6,
+                    env_json = ?7,
+                    params_schema_json = ?8,
+                    args_template_json = ?9,
                     updated_at = datetime('now')
-                 WHERE id = ?9",
+                 WHERE id = ?10",
                 params![
                     payload.name,
                     payload.description,
                     payload.body.as_str(),
                     workspace,
                     interpreter,
+                    normalize_opt_name(&payload.venv_name),
                     env_json,
                     params_schema_json,
                     args_template_json,
@@ -203,6 +208,27 @@ impl ScriptsRepo {
         Ok(())
     }
 
+    /// 绑定了指定 venv 的脚本名（删除 venv 前的引用检查）。
+    pub fn names_by_venv(conn: &Connection, venv: &str) -> Result<Vec<String>, AppError> {
+        let mut stmt = conn
+            .prepare("SELECT name FROM scripts WHERE venv_name = ?1 ORDER BY name")
+            .map_err(|e| AppError::DbError {
+                message: e.to_string(),
+            })?;
+        let rows = stmt
+            .query_map([venv], |row| row.get::<_, String>(0))
+            .map_err(|e| AppError::DbError {
+                message: e.to_string(),
+            })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| AppError::DbError {
+                message: e.to_string(),
+            })?);
+        }
+        Ok(out)
+    }
+
     pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<ScriptDto, AppError> {
         // name 已由 service 层归一化校验
         let changed = conn
@@ -231,6 +257,13 @@ impl ScriptsRepo {
 }
 
 fn normalize_opt_path(value: &Option<String>) -> Option<String> {
+    value
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+fn normalize_opt_name(value: &Option<String>) -> Option<String> {
     value
         .as_ref()
         .map(|s| s.trim().to_string())

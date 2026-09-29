@@ -1,10 +1,10 @@
-use tauri::{Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::appearance::{self, AppearanceHost};
 use crate::domain::{
     AppearanceDto, OcrResult, OcrSettingsBundle, OcrSettingsSave, ScriptCreate, ScriptDto,
-    ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate, ScriptsSettingsBundle,
-    ScriptsSettingsSave, VenvStatus, SETTING_DEBUG_ENABLED, SETTING_UI_THEME,
+    ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate, ScriptVenvSummary,
+    ScriptsSettingsBundle, ScriptsSettingsSave, SETTING_DEBUG_ENABLED, SETTING_UI_THEME,
 };
 use crate::errors::AppError;
 use crate::services::log_service::LogService;
@@ -163,12 +163,13 @@ pub fn create_script(
 }
 
 #[tauri::command]
-pub fn update_script(
+pub async fn update_script(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: i64,
     payload: ScriptUpdate,
 ) -> Result<ScriptDto, AppError> {
-    ScriptsService::update(&state.db, id, payload)
+    ScriptsService::update(&app, &state.db, id, payload).await
 }
 
 #[tauri::command]
@@ -219,8 +220,29 @@ pub async fn create_scripts_venv(state: State<'_, AppState>) -> Result<(), AppEr
 }
 
 #[tauri::command]
-pub async fn scripts_venv_status(state: State<'_, AppState>) -> Result<VenvStatus, AppError> {
-    ScriptsService::venv_status(&state.db).await
+pub async fn create_script_venv(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), AppError> {
+    ScriptsService::create_named_venv(&app, &state.db, &name).await
+}
+
+#[tauri::command]
+pub async fn list_script_venvs(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Vec<ScriptVenvSummary>, AppError> {
+    ScriptsService::list_venvs(&app, &state.db).await
+}
+
+#[tauri::command]
+pub async fn delete_script_venv(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), AppError> {
+    ScriptsService::delete_venv(&app, &state.db, &name).await
 }
 
 fn require_debug(state: &State<'_, AppState>) -> Result<(), AppError> {

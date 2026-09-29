@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppConfirm from "@/components/common/AppConfirm.vue";
@@ -8,6 +8,8 @@ import ScriptLogPanel from "@/tools/scripts/ScriptLogPanel.vue";
 import ScriptMetaPanel from "@/tools/scripts/ScriptMetaPanel.vue";
 import ScriptParamForm from "@/tools/scripts/ScriptParamForm.vue";
 import ScriptRunBar from "@/tools/scripts/ScriptRunBar.vue";
+import { listScriptVenvs } from "@/api/scripts";
+import type { ScriptVenvSummary } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { useWorkbench } from "@/composables/useWorkbench";
 import { useScriptRun } from "@/tools/scripts/useScriptRun";
@@ -17,6 +19,21 @@ import { formatAppError } from "@/utils/error";
 const { t } = useI18n();
 const { success, error } = useMessage();
 const { mainView } = useWorkbench();
+
+/** 可绑定 venv 列表（命名 venv，供脚本级下拉） */
+const venvs = ref<ScriptVenvSummary[]>([]);
+
+async function loadVenvs() {
+  try {
+    venvs.value = (await listScriptVenvs()).filter((v) => !v.workspace);
+  } catch (err) {
+    error(formatAppError(err, (key) => t(key)));
+  }
+}
+
+onMounted(() => {
+  void loadVenvs();
+});
 const {
   draft,
   dirty,
@@ -136,7 +153,7 @@ async function onCancel() {
           @cancel="onCancel"
         />
         <div class="left-scroll" data-scrollbar="thin">
-          <ScriptMetaPanel v-model:draft="leftDraft" />
+          <ScriptMetaPanel v-model:draft="leftDraft" :venvs="venvs" />
           <ScriptParamForm
             :schema="draft.paramsSchema"
             :values="paramValues"
