@@ -9,8 +9,8 @@ import type { ScriptDto, ScriptParamDef, ScriptParamType } from "@/api/types";
 
 const props = defineProps<{
   draft: ScriptDto;
-  /** 可绑定的命名 venv 列表（EditorPage 加载传入） */
-  venvs: { name: string }[];
+  /** 可绑定的命名 venv 列表（EditorPage 加载传入，含版本号） */
+  venvs: { name: string; pythonVersion?: string | null }[];
 }>();
 
 const emit = defineEmits<{
@@ -156,7 +156,9 @@ function onTypeChange(index: number, type: ScriptParamType) {
         @change="patch({ venvName: ($event.target as HTMLSelectElement).value || undefined })"
       >
         <option value="">{{ t("scripts.venvFollowGlobal") }}</option>
-        <option v-for="v in venvs" :key="v.name" :value="v.name">{{ v.name }}</option>
+        <option v-for="v in venvs" :key="v.name" :value="v.name">
+          {{ v.name }}<template v-if="v.pythonVersion">（{{ v.pythonVersion }}）</template>
+        </option>
       </select>
       <span class="hint">{{ t("scripts.venvBindHint") }}</span>
     </label>

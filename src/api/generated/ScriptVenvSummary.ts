@@ -5,6 +5,10 @@
  */
 export type ScriptVenvSummary = { name: string, pythonPath: string, 
 /**
+ * venv 的 Python 版本（读 `pyvenv.cfg` 的 `version =`；读不到为 None）。
+ */
+pythonVersion?: string, 
+/**
  * true = 默认 workspace 下的 `.venv`（自动探测条目，非托管命名 venv）。
  */
 workspace: boolean, };

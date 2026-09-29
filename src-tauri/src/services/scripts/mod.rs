@@ -298,10 +298,13 @@ impl ScriptsService {
                 if validate::validate_venv_name(&name).is_err() {
                     continue; // 非法目录名不纳入管理
                 }
-                if let Some(py) = python_exists(&entry.path()).await {
+                let venv_root = entry.path();
+                if let Some(py) = python_exists(&venv_root).await {
+                    let python_version = read_venv_version(&venv_root).await;
                     out.push(ScriptVenvSummary {
                         name,
                         python_path: py,
+                        python_version,
                         workspace: false,
                     });
                 }
@@ -312,10 +315,13 @@ impl ScriptsService {
         let settings = Self::get_settings(db)?;
         let ws = settings.default_workspace.trim();
         if !ws.is_empty() {
-            if let Some(py) = venv_python_at(Path::new(ws)).await {
+            let venv_root = Path::new(ws).join(".venv");
+            if let Some(py) = python_exists(&venv_root).await {
+                let python_version = read_venv_version(&venv_root).await;
                 out.push(ScriptVenvSummary {
                     name: ".venv".into(),
                     python_path: py,
+                    python_version,
                     workspace: true,
                 });
             }
@@ -588,6 +594,27 @@ async fn probe_python(python: &str, probe_cwd: &Path) -> Result<(), AppError> {
     })
 }
 
+/// 读 venv 根目录 `pyvenv.cfg` 的 `version =`（venv 标准产物；读不到为 None）。
+async fn read_venv_version(venv_root: &Path) -> Option<String> {
+    let cfg = tokio::fs::read_to_string(venv_root.join("pyvenv.cfg"))
+        .await
+        .ok()?;
+    parse_pyvenv_version(&cfg)
+}
+
+/// 解析 `pyvenv.cfg` 内容中的版本行（容忍空格变体：`version = x` / `version=x`）。
+fn parse_pyvenv_version(content: &str) -> Option<String> {
+    content.lines().find_map(|line| {
+        let line = line.trim();
+        line.strip_prefix("version")
+            .map(str::trim_start)
+            .and_then(|rest| rest.strip_prefix('='))
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(str::to_string)
+    })
+}
+
 /// 下次运行前清理孤儿临时脚本（app 崩溃/断电残留）。
 async fn cleanup_orphan_run_scripts(run_dir: &Path) {
     let Ok(mut entries) = tokio::fs::read_dir(run_dir).await else {
@@ -631,5 +658,28 @@ mod tests {
             .expect_err("robocopy --version exits non-zero");
         let msg = format!("{err:?}");
         assert!(msg.contains("not usable"), "got: {msg}");
+    }
+
+    #[test]
+    fn parse_pyvenv_version_variants() {
+        let cfg = "home = C:\\Python311\ninclude-system-site-packages = false\nversion = 3.11.15\n";
+        assert_eq!(parse_pyvenv_version(cfg).as_deref(), Some("3.11.15"));
+        assert_eq!(
+            parse_pyvenv_version("version=3.9\n").as_deref(),
+            Some("3.9")
+        );
+        assert_eq!(parse_pyvenv_version("home = x\n").as_deref(), None);
+        assert_eq!(parse_pyvenv_version("").as_deref(), None);
+        // 实机 workspace .venv 的 cfg 顺带验证
+    }
+
+    #[tokio::test]
+    async fn read_venv_version_from_real_workspace_venv() {
+        let dir = Path::new(r"D:\workspace\environment\default_wp\.venv");
+        if !dir.join("pyvenv.cfg").exists() {
+            return; // 目录不在时跳过（非用户机器）
+        }
+        let v = read_venv_version(dir).await;
+        assert!(v.is_some(), "workspace .venv pyvenv.cfg should parse");
     }
 }

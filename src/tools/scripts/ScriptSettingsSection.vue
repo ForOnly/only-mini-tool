@@ -236,7 +236,8 @@ onMounted(() => {
       <div v-for="v in venvs" :key="v.name" class="venv-row">
         <div class="venv-main">
           <span class="venv-name">
-            {{ v.name }}<template v-if="v.workspace">（workspace）</template>
+            {{ v.name }}<template v-if="v.pythonVersion"> · {{ v.pythonVersion }}</template
+            ><template v-if="v.workspace">（workspace）</template>
           </span>
           <span class="venv-path">{{ v.pythonPath }}</span>
         </div>
