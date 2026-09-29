@@ -239,13 +239,27 @@ impl ScriptsService {
         .await
         {
             Ok(outcome) if outcome.exit_code == Some(0) => Ok(()),
-            Ok(outcome) => Err(AppError::InternalError {
-                message: format!(
-                    "python -m venv failed (exit {:?}): {}",
-                    outcome.exit_code,
-                    outcome.stderr.trim()
-                ),
-            }),
+            Ok(outcome) => {
+                // exit 9009 = Windows「找不到命令」；空输出非零退出多为 shim（mise/pyenv）
+                // 在当前目录解析失败——两种情况 python 都没真正跑起来
+                const CMD_NOT_FOUND: i32 = 9009;
+                let unusable = outcome.exit_code == Some(CMD_NOT_FOUND)
+                    || (outcome.stderr.trim().is_empty() && outcome.stdout.trim().is_empty());
+                let hint = if unusable {
+                    " — python not found or unusable: set the global Python path to the py \
+                     launcher or an absolute python.exe path (mise/pyenv shims may not work in \
+                     some directories)"
+                } else {
+                    ""
+                };
+                Err(AppError::InternalError {
+                    message: format!(
+                        "python -m venv failed (exit {:?}): {}{hint}",
+                        outcome.exit_code,
+                        outcome.stderr.trim()
+                    ),
+                })
+            }
             Err(e) => Err(e),
         };
 
@@ -253,7 +267,10 @@ impl ScriptsService {
             // 失败清理半成品目录：python -m venv 在残留目录上必然再失败（该名称将永久失败）
             tracing::warn!(dir = %dir.display(), error = %err, "venv creation failed, cleaning partial dir");
             if let Err(clean_err) = tokio::fs::remove_dir_all(dir).await {
-                tracing::warn!("venv partial dir cleanup failed: {clean_err}");
+                // NotFound = 目录本就不存在（如 spawn 未成功）——无残留，静默
+                if clean_err.kind() != std::io::ErrorKind::NotFound {
+                    tracing::warn!("venv partial dir cleanup failed: {clean_err}");
+                }
             }
         }
         result

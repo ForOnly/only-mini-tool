@@ -158,6 +158,8 @@ export default {
     unsavedMessage: "Save before leaving, or discard changes?",
     settingsSection: "Scripts",
     pythonPath: "Python path",
+    pythonPathHint:
+      "On Windows prefer py or an absolute python.exe path; mise/pyenv shims may not work in some directories",
     defaultWorkspace: "Default workspace",
     saveSettings: "Save",
     settingsSaved: "Script settings saved",

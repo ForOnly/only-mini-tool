@@ -167,6 +167,7 @@ onMounted(() => {
     <label class="field">
       <span>{{ t("scripts.pythonPath") }}</span>
       <AppInput v-model="pythonPath" :disabled="busy" />
+      <span class="hint">{{ t("scripts.pythonPathHint") }}</span>
     </label>
     <label class="field">
       <span>{{ t("scripts.defaultWorkspace") }}</span>

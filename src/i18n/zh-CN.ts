@@ -156,6 +156,7 @@ export default {
     unsavedMessage: "保存后返回列表，或丢弃更改？",
     settingsSection: "脚本库",
     pythonPath: "Python 路径",
+    pythonPathHint: "Windows 建议 py 或 python.exe 绝对路径；mise/pyenv shim 在部分目录可能不可用",
     defaultWorkspace: "默认 Workspace",
     saveSettings: "保存",
     settingsSaved: "脚本库设置已保存",
