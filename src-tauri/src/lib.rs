@@ -66,6 +66,8 @@ pub fn run() {
             commands::create_script_venv,
             commands::list_script_venvs,
             commands::delete_script_venv,
+            commands::install_script_venv_packages,
+            commands::open_script_venv_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

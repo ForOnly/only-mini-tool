@@ -70,3 +70,19 @@ export function listScriptVenvs(): Promise<ScriptVenvSummary[]> {
 export function deleteScriptVenv(name: string): Promise<void> {
   return invoke("delete_script_venv", { name });
 }
+
+export function installScriptVenvPackages(
+  name: string,
+  packages: string[],
+  requirements?: string,
+): Promise<ScriptRunResult> {
+  return invoke<ScriptRunResult>("install_script_venv_packages", {
+    name,
+    packages,
+    requirements: requirements ?? null,
+  });
+}
+
+export function openScriptVenvTerminal(name: string): Promise<void> {
+  return invoke("open_script_venv_terminal", { name });
+}

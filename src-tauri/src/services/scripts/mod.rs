@@ -14,6 +14,8 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::Value;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -152,6 +154,138 @@ impl ScriptsService {
     /// 取消当前运行（无运行时为无害空操作）。
     pub fn cancel_run() {
         ScriptRunRegistry::global().cancel_all();
+    }
+
+    /// 向指定命名 venv 安装依赖（`python -m pip install`，复用执行内核）。
+    /// interpreter 为 venv python 绝对路径——天然不受 mise/pyenv shim 目录敏感影响。
+    /// 不提供取消（pip 中途被杀留半装环境）；超时 600s 由 runner 杀树兜底、重跑幂等修复。
+    pub async fn install_venv_packages(
+        app: &AppHandle,
+        name: &str,
+        packages: Vec<String>,
+        requirements: Option<String>,
+    ) -> Result<ScriptRunResult, AppError> {
+        let name = validate::validate_venv_name(name)?;
+        let root = venvs_dir(app)?;
+        let Some(venv_python) = python_exists(&root.join(&name)).await else {
+            return Err(AppError::ValidationError {
+                message: format!("venv not found: {name}"),
+            });
+        };
+
+        let mut args = vec!["-m".into(), "pip".into(), "install".into()];
+        let mut pkgs: Vec<String> = packages
+            .into_iter()
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        let has_requirements = requirements
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .is_some();
+        if let Some(req) = requirements
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            if !Path::new(req).exists() {
+                return Err(AppError::ValidationError {
+                    message: format!("requirements file not found: {req}"),
+                });
+            }
+            args.push("-r".into());
+            args.push(req.to_string());
+        }
+        if pkgs.is_empty() && !has_requirements {
+            return Err(AppError::ValidationError {
+                message: "nothing to install: provide packages or a requirements file".into(),
+            });
+        }
+        args.append(&mut pkgs);
+
+        let registry = ScriptRunRegistry::global();
+        let run_id = Uuid::new_v4();
+        let Some(token) = registry.try_register(run_id) else {
+            return Err(AppError::ScriptsBusy {
+                message: "a script is already running".into(),
+            });
+        };
+        let result = Self::pip_install_registered(app, &venv_python, args, token).await;
+        registry.unregister(&run_id);
+        result
+    }
+
+    async fn pip_install_registered(
+        app: &AppHandle,
+        venv_python: &str,
+        args: Vec<String>,
+        token: CancellationToken,
+    ) -> Result<ScriptRunResult, AppError> {
+        let cwd = venvs_dir(app)?;
+        let mut env: HashMap<String, String> = std::env::vars().collect();
+        prepare::ensure_stdio_utf8(&mut env);
+
+        let outcome = runner::spawn_and_stream(
+            SpawnOptions {
+                interpreter: venv_python.to_string(),
+                args: args.clone(),
+                cwd,
+                env,
+                stdin_json: serde_json::json!({}),
+                // 大依赖（torch 等）超 300s；硬编码不进 settings（Won't 纪律）
+                timeout: Duration::from_secs(600),
+            },
+            token,
+        )
+        .await?;
+
+        // 等效命令 = venv python + 完整 pip 参数（手工拼，不经 display_command）
+        let command = format!("{} {}", venv_python, args.join(" "));
+        Ok(ScriptRunResult {
+            exit_code: outcome.exit_code,
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+            cancelled: outcome.cancelled,
+            command,
+        })
+    }
+
+    /// 在新终端窗口打开并激活指定 venv（逃生舱：完整 pip/交互操作）。
+    /// 只开窗口不执行任务，不走 runner/单飞。
+    pub async fn open_venv_terminal(app: &AppHandle, name: &str) -> Result<(), AppError> {
+        let name = validate::validate_venv_name(name)?;
+        let root = venvs_dir(app)?;
+        let venv = root.join(&name);
+        if python_exists(&venv).await.is_none() {
+            return Err(AppError::ValidationError {
+                message: format!("venv not found: {name}"),
+            });
+        }
+        #[cfg(windows)]
+        {
+            const CREATE_NEW_CONSOLE: u32 = 0x0010_0000;
+            let activate = venv.join("Scripts").join("activate.bat");
+            // /K 保持窗口；call + 引号兼容路径空格
+            let _ = std::process::Command::new("cmd")
+                .args(["/K", &format!("call \"{}\"", activate.display())])
+                .creation_flags(CREATE_NEW_CONSOLE)
+                .spawn();
+            Ok(())
+        }
+        #[cfg(unix)]
+        {
+            let activate = venv.join("bin").join("activate");
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
+            let _ = std::process::Command::new(shell)
+                .arg("-c")
+                .arg(format!(
+                    "source \"{}\"; exec \"$SHELL\"",
+                    activate.display()
+                ))
+                .spawn();
+            Ok(())
+        }
     }
 
     /// 在全局默认 workspace 创建 `.venv`（复用执行内核，与脚本运行共享单飞）。
