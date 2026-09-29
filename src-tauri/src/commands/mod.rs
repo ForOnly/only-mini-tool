@@ -2,12 +2,14 @@ use tauri::{Manager, State};
 
 use crate::appearance::{self, AppearanceHost};
 use crate::domain::{
-    AppearanceDto, OcrResult, OcrSettingsBundle, OcrSettingsSave, SETTING_DEBUG_ENABLED,
-    SETTING_UI_THEME,
+    AppearanceDto, OcrResult, OcrSettingsBundle, OcrSettingsSave, ScriptCreate, ScriptDto,
+    ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate, ScriptsSettingsBundle,
+    ScriptsSettingsSave, SETTING_DEBUG_ENABLED, SETTING_UI_THEME,
 };
 use crate::errors::AppError;
 use crate::services::log_service::LogService;
 use crate::services::ocr::OcrService;
+use crate::services::scripts::ScriptsService;
 use crate::services::settings_service::SettingsService;
 use crate::state::AppState;
 
@@ -140,6 +142,75 @@ pub fn rotate_image_orientation(
 #[tauri::command]
 pub fn clear_ocr_temp(app: tauri::AppHandle) -> Result<(), AppError> {
     OcrService::clear_ocr_temp(&app)
+}
+
+#[tauri::command]
+pub fn list_scripts(state: State<'_, AppState>) -> Result<Vec<ScriptSummary>, AppError> {
+    ScriptsService::list(&state.db)
+}
+
+#[tauri::command]
+pub fn get_script(state: State<'_, AppState>, id: i64) -> Result<ScriptDto, AppError> {
+    ScriptsService::get(&state.db, id)
+}
+
+#[tauri::command]
+pub fn create_script(
+    state: State<'_, AppState>,
+    payload: ScriptCreate,
+) -> Result<ScriptDto, AppError> {
+    ScriptsService::create(&state.db, payload)
+}
+
+#[tauri::command]
+pub fn update_script(
+    state: State<'_, AppState>,
+    id: i64,
+    payload: ScriptUpdate,
+) -> Result<ScriptDto, AppError> {
+    ScriptsService::update(&state.db, id, payload)
+}
+
+#[tauri::command]
+pub fn delete_script(state: State<'_, AppState>, id: i64) -> Result<(), AppError> {
+    ScriptsService::delete(&state.db, id)
+}
+
+#[tauri::command]
+pub fn rename_script(
+    state: State<'_, AppState>,
+    id: i64,
+    name: String,
+) -> Result<ScriptDto, AppError> {
+    ScriptsService::rename(&state.db, id, name)
+}
+
+#[tauri::command]
+pub fn get_scripts_settings(state: State<'_, AppState>) -> Result<ScriptsSettingsBundle, AppError> {
+    ScriptsService::get_settings(&state.db)
+}
+
+#[tauri::command]
+pub fn save_scripts_settings(
+    state: State<'_, AppState>,
+    payload: ScriptsSettingsSave,
+) -> Result<(), AppError> {
+    ScriptsService::save_settings(&state.db, payload)
+}
+
+#[tauri::command]
+pub async fn run_script(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    payload: ScriptRunRequest,
+) -> Result<ScriptRunResult, AppError> {
+    ScriptsService::run(&app, &state.db, payload).await
+}
+
+#[tauri::command]
+pub fn cancel_script_run() -> Result<(), AppError> {
+    ScriptsService::cancel_run();
+    Ok(())
 }
 
 fn require_debug(state: &State<'_, AppState>) -> Result<(), AppError> {

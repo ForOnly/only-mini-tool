@@ -44,6 +44,9 @@ pub enum AppError {
 
     #[error("{message}")]
     OcrCancelled { message: String },
+
+    #[error("{message}")]
+    ScriptsBusy { message: String },
 }
 
 impl Serialize for AppError {
@@ -67,6 +70,7 @@ impl Serialize for AppError {
             AppError::OcrImageTooLarge { message } => ("ocr.image_too_large", message.as_str()),
             AppError::OcrBusy { message } => ("ocr.busy", message.as_str()),
             AppError::OcrCancelled { message } => ("ocr.cancelled", message.as_str()),
+            AppError::ScriptsBusy { message } => ("scripts.busy", message.as_str()),
         };
 
         let mut state = serializer.serialize_struct("AppError", 2)?;

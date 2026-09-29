@@ -53,6 +53,25 @@ defineEmits<{
           stroke-linecap="round"
         />
       </svg>
+      <svg
+        v-else-if="icon === 'scripts'"
+        class="icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M8 7h8M8 12h5M8 17h7"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+        />
+        <path
+          d="M5 4.5h14A1.5 1.5 0 0 1 20.5 6v12a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18V6A1.5 1.5 0 0 1 5 4.5z"
+          stroke="currentColor"
+          stroke-width="1.75"
+        />
+      </svg>
       <span v-else class="icon-fallback" aria-hidden="true">·</span>
       <span
         class="status"

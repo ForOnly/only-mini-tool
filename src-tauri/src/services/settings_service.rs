@@ -1,8 +1,10 @@
 use crate::domain::{
     parse_inspector_placement, UiTheme, DEFAULT_OCR_ACTIVE_ENGINE, DEFAULT_OCR_INSPECTOR_PLACEMENT,
-    DEFAULT_OCR_TIMEOUT_MS, OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED,
-    SETTING_OCR_ACTIVE_ENGINE, SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION,
-    SETTING_OCR_TIMEOUT_MS, SETTING_UI_THEME,
+    DEFAULT_OCR_TIMEOUT_MS, DEFAULT_SCRIPTS_ENV_JSON, DEFAULT_SCRIPTS_PYTHON_PATH,
+    OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE,
+    SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
+    SETTING_SCRIPTS_DEFAULT_WORKSPACE, SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_PYTHON_PATH,
+    SETTING_UI_THEME,
 };
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
@@ -51,6 +53,20 @@ impl SettingsService {
                     SETTING_OCR_INSPECTOR_PLACEMENT,
                     DEFAULT_OCR_INSPECTOR_PLACEMENT,
                 )?;
+            }
+
+            if SettingsRepo::get(conn, SETTING_SCRIPTS_PYTHON_PATH)?.is_none() {
+                SettingsRepo::set(
+                    conn,
+                    SETTING_SCRIPTS_PYTHON_PATH,
+                    DEFAULT_SCRIPTS_PYTHON_PATH,
+                )?;
+            }
+            if SettingsRepo::get(conn, SETTING_SCRIPTS_DEFAULT_WORKSPACE)?.is_none() {
+                SettingsRepo::set(conn, SETTING_SCRIPTS_DEFAULT_WORKSPACE, "")?;
+            }
+            if SettingsRepo::get(conn, SETTING_SCRIPTS_ENV_JSON)?.is_none() {
+                SettingsRepo::set(conn, SETTING_SCRIPTS_ENV_JSON, DEFAULT_SCRIPTS_ENV_JSON)?;
             }
 
             Ok(false)

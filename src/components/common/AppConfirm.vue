@@ -82,6 +82,9 @@ onUnmounted(() => {
       >
         <h2 id="confirm-title" class="title">{{ title }}</h2>
         <p v-if="message" id="confirm-desc" class="message">{{ message }}</p>
+        <div v-if="$slots.default" class="body">
+          <slot />
+        </div>
         <div class="actions">
           <AppButton variant="ghost" @click="emit('cancel')">
             {{ resolvedCancelLabel }}
@@ -135,6 +138,12 @@ onUnmounted(() => {
   font-size: var(--text-md);
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
 .actions {

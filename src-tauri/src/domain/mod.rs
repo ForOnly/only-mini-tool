@@ -86,17 +86,24 @@ pub struct OcrResult {
 }
 
 pub mod ocr_settings;
+pub mod script;
 pub mod settings;
 
 pub use ocr_settings::{
     OcrEngineFieldInfo, OcrEngineInfo, OcrFieldKind, OcrSettingsBundle, OcrSettingsSave,
 };
+pub use script::{
+    ScriptArgsTemplate, ScriptCreate, ScriptDto, ScriptParamDef, ScriptParamPassAs,
+    ScriptParamType, ScriptPathMode, ScriptRunRequest, ScriptRunResult, ScriptSummary,
+    ScriptUpdate, ScriptsSettingsBundle, ScriptsSettingsSave,
+};
 pub use settings::{
     engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
-    DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, OCR_ENGINE_KEY_PREFIX,
-    OCR_SETTINGS_VERSION, SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE,
-    SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
-    SETTING_UI_THEME,
+    DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, DEFAULT_SCRIPTS_ENV_JSON,
+    DEFAULT_SCRIPTS_PYTHON_PATH, OCR_ENGINE_KEY_PREFIX, OCR_SETTINGS_VERSION,
+    SETTING_DEBUG_ENABLED, SETTING_OCR_ACTIVE_ENGINE, SETTING_OCR_INSPECTOR_PLACEMENT,
+    SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS, SETTING_SCRIPTS_DEFAULT_WORKSPACE,
+    SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_PYTHON_PATH, SETTING_UI_THEME,
 };
 
 pub fn export_all_ts(out_dir: &std::path::Path) {
@@ -112,6 +119,19 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
     OcrEngineInfo::export_all().expect("export OcrEngineInfo");
     OcrSettingsBundle::export_all().expect("export OcrSettingsBundle");
     OcrSettingsSave::export_all().expect("export OcrSettingsSave");
+    ScriptParamType::export_all().expect("export ScriptParamType");
+    ScriptParamPassAs::export_all().expect("export ScriptParamPassAs");
+    ScriptPathMode::export_all().expect("export ScriptPathMode");
+    ScriptParamDef::export_all().expect("export ScriptParamDef");
+    ScriptArgsTemplate::export_all().expect("export ScriptArgsTemplate");
+    ScriptSummary::export_all().expect("export ScriptSummary");
+    ScriptDto::export_all().expect("export ScriptDto");
+    ScriptCreate::export_all().expect("export ScriptCreate");
+    ScriptUpdate::export_all().expect("export ScriptUpdate");
+    ScriptsSettingsBundle::export_all().expect("export ScriptsSettingsBundle");
+    ScriptsSettingsSave::export_all().expect("export ScriptsSettingsSave");
+    ScriptRunRequest::export_all().expect("export ScriptRunRequest");
+    ScriptRunResult::export_all().expect("export ScriptRunResult");
 
     let bindings = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bindings");
     let alt_bindings = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bindings");
@@ -128,6 +148,19 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
         "OcrEngineInfo.ts",
         "OcrSettingsBundle.ts",
         "OcrSettingsSave.ts",
+        "ScriptParamType.ts",
+        "ScriptParamPassAs.ts",
+        "ScriptPathMode.ts",
+        "ScriptParamDef.ts",
+        "ScriptArgsTemplate.ts",
+        "ScriptSummary.ts",
+        "ScriptDto.ts",
+        "ScriptCreate.ts",
+        "ScriptUpdate.ts",
+        "ScriptsSettingsBundle.ts",
+        "ScriptsSettingsSave.ts",
+        "ScriptRunRequest.ts",
+        "ScriptRunResult.ts",
     ] {
         let src = if bindings.join(name).exists() {
             bindings.join(name)
@@ -150,6 +183,19 @@ export type { OcrEngineFieldInfo } from "./OcrEngineFieldInfo";
 export type { OcrEngineInfo } from "./OcrEngineInfo";
 export type { OcrSettingsBundle } from "./OcrSettingsBundle";
 export type { OcrSettingsSave } from "./OcrSettingsSave";
+export type { ScriptParamType } from "./ScriptParamType";
+export type { ScriptParamPassAs } from "./ScriptParamPassAs";
+export type { ScriptPathMode } from "./ScriptPathMode";
+export type { ScriptParamDef } from "./ScriptParamDef";
+export type { ScriptArgsTemplate } from "./ScriptArgsTemplate";
+export type { ScriptSummary } from "./ScriptSummary";
+export type { ScriptDto } from "./ScriptDto";
+export type { ScriptCreate } from "./ScriptCreate";
+export type { ScriptUpdate } from "./ScriptUpdate";
+export type { ScriptsSettingsBundle } from "./ScriptsSettingsBundle";
+export type { ScriptsSettingsSave } from "./ScriptsSettingsSave";
+export type { ScriptRunRequest } from "./ScriptRunRequest";
+export type { ScriptRunResult } from "./ScriptRunResult";
 "#;
     std::fs::write(out_dir.join("index.ts"), index).expect("write index.ts");
 }

@@ -52,6 +52,16 @@ pub fn run() {
             commands::save_clipboard_image,
             commands::rotate_image_orientation,
             commands::clear_ocr_temp,
+            commands::list_scripts,
+            commands::get_script,
+            commands::create_script,
+            commands::update_script,
+            commands::delete_script,
+            commands::rename_script,
+            commands::get_scripts_settings,
+            commands::save_scripts_settings,
+            commands::run_script,
+            commands::cancel_script_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

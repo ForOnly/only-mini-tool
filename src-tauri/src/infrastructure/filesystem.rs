@@ -24,6 +24,10 @@ pub fn ocr_temp_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(app_cache_dir(app)?.join("ocr"))
 }
 
+pub fn scripts_run_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    Ok(app_cache_dir(app)?.join("scripts-run"))
+}
+
 pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     Ok(app_data_dir(app)?.join("logs"))
 }
@@ -36,6 +40,7 @@ pub fn ensure_dirs(app: &AppHandle) -> Result<(), AppError> {
     let data = app_data_dir(app)?;
     let logs = logs_dir(app)?;
     let ocr = ocr_temp_dir(app)?;
+    let scripts = scripts_run_dir(app)?;
     std::fs::create_dir_all(&data).map_err(|error| AppError::InternalError {
         message: format!("failed to create data dir: {error}"),
     })?;
@@ -44,6 +49,9 @@ pub fn ensure_dirs(app: &AppHandle) -> Result<(), AppError> {
     })?;
     std::fs::create_dir_all(&ocr).map_err(|error| AppError::InternalError {
         message: format!("failed to create ocr temp dir: {error}"),
+    })?;
+    std::fs::create_dir_all(&scripts).map_err(|error| AppError::InternalError {
+        message: format!("failed to create scripts run dir: {error}"),
     })?;
     Ok(())
 }
