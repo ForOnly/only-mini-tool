@@ -1,6 +1,4 @@
 //! 脚本执行内核：机制（流式截断/取消令牌/杀树/运行注册表），不含单飞等策略。
-// TODO(步骤3): service 接线后移除本行 allow（当前仅集成测试消费）
-#![allow(dead_code)]
 
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
@@ -42,13 +40,13 @@ pub struct SpawnOptions {
 }
 
 /// 运行结果（IPC 无关的内核形态；由 service 组装为 ScriptRunResult）。
+/// 超时信号内嵌于 stderr note（与基线行为一致），不单独暴露字段。
 #[derive(Debug)]
 pub struct RunOutcome {
     pub exit_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
     pub cancelled: bool,
-    pub timed_out: bool,
 }
 
 /// 运行注册表：run_id → 取消令牌。
@@ -109,7 +107,6 @@ pub async fn spawn_and_stream(
             stdout: String::new(),
             stderr: String::new(),
             cancelled: true,
-            timed_out: false,
         });
     }
 
@@ -191,7 +188,6 @@ pub async fn spawn_and_stream(
         stdout,
         stderr,
         cancelled,
-        timed_out,
     })
 }
 
@@ -488,7 +484,7 @@ mod tests {
         .expect("run echo");
         assert_eq!(out.exit_code, Some(0));
         assert!(out.stdout.contains("runner_ok"));
-        assert!(!out.cancelled && !out.timed_out);
+        assert!(!out.cancelled);
     }
 
     #[tokio::test]
@@ -532,7 +528,6 @@ mod tests {
         )
         .await
         .expect("timeout sleep");
-        assert!(out.timed_out);
         assert!(!out.cancelled);
         assert!(out.stderr.contains("timed out"));
     }

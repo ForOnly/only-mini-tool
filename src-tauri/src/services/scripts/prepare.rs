@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
+use uuid::Uuid;
 
 use crate::domain::{ScriptArgsTemplate, ScriptParamDef, ScriptParamPassAs, ScriptParamType};
+use crate::errors::AppError;
 
 use super::validate::is_truthy;
 
@@ -170,6 +172,61 @@ pub fn build_args(
     args.extend_from_slice(dyn_args);
     args.extend(args_template.after.iter().cloned());
     args
+}
+
+/// 等效命令回显：解释器 + before + **脚本名**（非随机临时路径，保可读）+ 动态参数 + after。
+/// 含空白/空串的片段加引号；仅供展示，不保证可直接粘贴执行。
+pub fn display_command(
+    interpreter: &str,
+    script_name: &str,
+    args_template: &ScriptArgsTemplate,
+    dyn_args: &[String],
+) -> String {
+    let mut parts: Vec<String> = vec![quote_if_needed(interpreter)];
+    parts.extend(args_template.before.iter().map(|s| quote_if_needed(s)));
+    parts.push(quote_if_needed(&format!("{script_name}.py")));
+    parts.extend(dyn_args.iter().map(|s| quote_if_needed(s)));
+    parts.extend(args_template.after.iter().map(|s| quote_if_needed(s)));
+    parts.join(" ")
+}
+
+fn quote_if_needed(s: &str) -> String {
+    if s.is_empty() {
+        "\"\"".to_string()
+    } else if s.contains(char::is_whitespace) {
+        format!("\"{s}\"")
+    } else {
+        s.to_string()
+    }
+}
+
+/// 临时脚本守卫：写 `run-{uuid}.py` 至 run_dir，Drop 时删除（含 Err 路径）。
+/// 正常路径随 guard drop 删除；app 崩溃残留由下次运行前的孤儿清理兜底。
+pub struct TempScriptGuard {
+    path: PathBuf,
+}
+
+impl TempScriptGuard {
+    pub async fn create(run_dir: &Path, body: &str) -> Result<Self, AppError> {
+        let path = run_dir.join(format!("run-{}.py", Uuid::new_v4()));
+        tokio::fs::write(&path, body.as_bytes())
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("write temp script: {e}"),
+            })?;
+        Ok(TempScriptGuard { path })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempScriptGuard {
+    fn drop(&mut self) {
+        // Drop 不能 await；同步删除，失败无害（孤儿清理兜底）
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 #[cfg(test)]
@@ -343,5 +400,34 @@ mod tests {
             &["--k".to_string(), "v".to_string()],
         );
         assert_eq!(args, vec!["-u", "C:/tmp/run-x.py", "--k", "v", "--tail"]);
+    }
+
+    #[test]
+    fn display_command_quotes_whitespace_and_uses_script_name() {
+        let template = ScriptArgsTemplate {
+            before: vec!["-u".into()],
+            after: vec![],
+        };
+        let cmd = display_command(
+            "python",
+            "my script",
+            &template,
+            &["--k".to_string(), "a b".to_string(), String::new()],
+        );
+        assert_eq!(cmd, r#"python -u "my script.py" --k "a b" """#);
+    }
+
+    #[tokio::test]
+    async fn temp_script_guard_creates_and_removes() {
+        let dir = std::env::temp_dir().join(format!("omt-guard-test-{}", Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let path = {
+            let guard = TempScriptGuard::create(&dir, "print(1)").await.unwrap();
+            let p = guard.path().to_path_buf();
+            assert!(p.exists());
+            p
+        };
+        assert!(!path.exists(), "guard drop must remove temp script");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

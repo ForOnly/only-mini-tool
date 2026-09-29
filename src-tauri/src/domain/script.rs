@@ -157,4 +157,6 @@ pub struct ScriptRunResult {
     pub stdout: String,
     pub stderr: String,
     pub cancelled: bool,
+    /// 等效命令回显：解释器 + args_template + 脚本名 + 动态参数（非临时路径，仅供阅读/复制）。
+    pub command: String,
 }

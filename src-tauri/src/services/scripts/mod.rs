@@ -1,4 +1,8 @@
 //! 脚本库：CRUD + Python 进程执行（无沙盒）。
+//!
+//! 分工：validate（校验纯函数）/ prepare（运行准备纯函数 + 临时脚本守卫）/
+//! runner（执行内核：流式截断、取消令牌、杀树、运行注册表）。
+//! 单飞策略在本层表达（registry 原子注册），内核对策略无感知。
 
 pub mod prepare;
 pub mod runner;
@@ -6,13 +10,11 @@ pub mod validate;
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
+use std::time::Duration;
 
+use serde_json::Value;
 use tauri::AppHandle;
-use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::domain::{
@@ -25,27 +27,12 @@ use crate::errors::AppError;
 use crate::infrastructure::database::Database;
 use crate::infrastructure::filesystem::scripts_run_dir;
 use crate::repository::scripts::ScriptsRepo;
+use crate::services::scripts::prepare::TempScriptGuard;
+use crate::services::scripts::runner::{ScriptRunRegistry, SpawnOptions};
 use crate::services::settings_service::SettingsService;
 
-/// 单次运行硬编码超时（不进 settings）。
+/// 单次运行硬编码超时（不进 settings，Won't：scripts.timeout_ms）。
 const RUN_TIMEOUT_SECS: u64 = 300;
-/// stdout / stderr 各截断上限。
-const OUTPUT_CAP_BYTES: usize = 1024 * 1024;
-
-struct RunGate {
-    lock: Mutex<()>,
-    child_id: Mutex<Option<u32>>,
-    cancelled: AtomicBool,
-}
-
-fn run_gate() -> &'static RunGate {
-    static GATE: OnceLock<RunGate> = OnceLock::new();
-    GATE.get_or_init(|| RunGate {
-        lock: Mutex::new(()),
-        child_id: Mutex::new(None),
-        cancelled: AtomicBool::new(false),
-    })
-}
 
 pub struct ScriptsService;
 
@@ -123,15 +110,9 @@ impl ScriptsService {
         Ok(())
     }
 
+    /// 取消当前运行（无运行时为无害空操作）。
     pub fn cancel_run() {
-        let gate = run_gate();
-        gate.cancelled.store(true, Ordering::SeqCst);
-        // 尽力杀子进程（Windows/Unix）
-        if let Ok(guard) = gate.child_id.try_lock() {
-            if let Some(pid) = *guard {
-                kill_pid(pid);
-            }
-        }
+        ScriptRunRegistry::global().cancel_all();
     }
 
     pub async fn run(
@@ -139,18 +120,26 @@ impl ScriptsService {
         db: &Database,
         payload: ScriptRunRequest,
     ) -> Result<ScriptRunResult, AppError> {
-        let gate = run_gate();
-        let _guard = match gate.lock.try_lock() {
-            Ok(g) => g,
-            Err(_) => {
-                return Err(AppError::ScriptsBusy {
-                    message: "a script is already running".into(),
-                });
-            }
+        // 单飞策略：registry 原子 check+insert（机制与策略分离）
+        let registry = ScriptRunRegistry::global();
+        let run_id = Uuid::new_v4();
+        let Some(token) = registry.try_register(run_id) else {
+            return Err(AppError::ScriptsBusy {
+                message: "a script is already running".into(),
+            });
         };
-        gate.cancelled.store(false, Ordering::SeqCst);
-        *gate.child_id.lock().await = None;
 
+        let result = Self::run_registered(app, db, payload, token).await;
+        registry.unregister(&run_id);
+        result
+    }
+
+    async fn run_registered(
+        app: &AppHandle,
+        db: &Database,
+        payload: ScriptRunRequest,
+        token: CancellationToken,
+    ) -> Result<ScriptRunResult, AppError> {
         let script = Self::get(db, payload.script_id)?;
         if script.language != "python" {
             return Err(AppError::ValidationError {
@@ -160,6 +149,7 @@ impl ScriptsService {
 
         let effective = prepare::effective_params(&script.params_schema, &payload.params);
         validate::validate_run_params(&script.params_schema, &effective)?;
+        let projected = prepare::project_params(&script.params_schema, &effective);
 
         let settings = Self::get_settings(db)?;
         let interpreter =
@@ -176,189 +166,64 @@ impl ScriptsService {
             &settings.default_workspace,
             fallback_dir,
         );
-        std::fs::create_dir_all(&cwd).map_err(|e| AppError::InternalError {
-            message: format!("create workspace cwd: {e}"),
-        })?;
+        tokio::fs::create_dir_all(&cwd)
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("create workspace cwd: {e}"),
+            })?;
 
         let run_dir = scripts_run_dir(app)?;
-        std::fs::create_dir_all(&run_dir).map_err(|e| AppError::InternalError {
-            message: format!("create scripts run dir: {e}"),
-        })?;
-        cleanup_orphan_run_scripts(&run_dir);
-        let script_path = run_dir.join(format!("run-{}.py", Uuid::new_v4()));
-        std::fs::write(&script_path, script.body.as_bytes()).map_err(|e| {
-            AppError::InternalError {
-                message: format!("write temp script: {e}"),
-            }
-        })?;
+        tokio::fs::create_dir_all(&run_dir)
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("create scripts run dir: {e}"),
+            })?;
+        cleanup_orphan_run_scripts(&run_dir).await;
+        let guard = TempScriptGuard::create(&run_dir, &script.body).await?;
 
-        let projected = prepare::project_params(&script.params_schema, &effective);
         let process_env: HashMap<String, String> = std::env::vars().collect();
         let env = prepare::merge_env(process_env, &settings.env, &script.env, &projected.envs);
-        // passAs=stdin 的参数（projected.stdin）由执行内核以 JSON 文档写入子进程 stdin
-        let args = prepare::build_args(&script.args_template, &script_path, &projected.args);
+        let args = prepare::build_args(&script.args_template, guard.path(), &projected.args);
+        let command = prepare::display_command(
+            &interpreter,
+            &script.name,
+            &script.args_template,
+            &projected.args,
+        );
 
-        let result = match spawn_and_wait(gate, &interpreter, &args, &cwd, &env).await {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = std::fs::remove_file(&script_path);
-                *gate.child_id.lock().await = None;
-                return Err(e);
-            }
-        };
+        let outcome = runner::spawn_and_stream(
+            SpawnOptions {
+                interpreter,
+                args,
+                cwd,
+                env,
+                stdin_json: Value::Object(projected.stdin),
+                timeout: Duration::from_secs(RUN_TIMEOUT_SECS),
+            },
+            token,
+        )
+        .await?;
 
-        let _ = std::fs::remove_file(&script_path);
-        *gate.child_id.lock().await = None;
-        Ok(result)
+        Ok(ScriptRunResult {
+            exit_code: outcome.exit_code,
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
+            cancelled: outcome.cancelled,
+            command,
+        })
     }
 }
 
-async fn spawn_and_wait(
-    gate: &RunGate,
-    interpreter: &str,
-    args: &[String],
-    cwd: &Path,
-    env: &HashMap<String, String>,
-) -> Result<ScriptRunResult, AppError> {
-    let mut cmd = Command::new(interpreter);
-    cmd.args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .env_clear();
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-
-    let child = cmd.spawn().map_err(|e| AppError::InternalError {
-        message: format!("failed to start python ({interpreter}): {e}"),
-    })?;
-
-    if let Some(pid) = child.id() {
-        *gate.child_id.lock().await = Some(pid);
-    }
-
-    let cancel_watch = async {
-        loop {
-            if gate.cancelled.load(Ordering::SeqCst) {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-    };
-
-    let wait_fut = child.wait_with_output();
-    tokio::pin!(wait_fut);
-
-    let output = tokio::select! {
-        _ = cancel_watch => {
-            if let Ok(guard) = gate.child_id.try_lock() {
-                if let Some(pid) = *guard {
-                    kill_pid(pid);
-                }
-            }
-            match wait_fut.await {
-                Ok(out) => finish_output(out, true, false),
-                Err(e) => {
-                    return Err(AppError::InternalError {
-                        message: format!("wait cancelled script: {e}"),
-                    });
-                }
-            }
-        }
-        _ = tokio::time::sleep(std::time::Duration::from_secs(RUN_TIMEOUT_SECS)) => {
-            if let Ok(guard) = gate.child_id.try_lock() {
-                if let Some(pid) = *guard {
-                    kill_pid(pid);
-                }
-            }
-            match wait_fut.await {
-                Ok(out) => finish_output(out, false, true),
-                Err(e) => {
-                    return Err(AppError::InternalError {
-                        message: format!("wait timed-out script: {e}"),
-                    });
-                }
-            }
-        }
-        res = &mut wait_fut => {
-            match res {
-                Ok(out) => finish_output(out, gate.cancelled.load(Ordering::SeqCst), false),
-                Err(e) => {
-                    return Err(AppError::InternalError {
-                        message: format!("wait script process: {e}"),
-                    });
-                }
-            }
-        }
-    };
-
-    Ok(output)
-}
-
-fn finish_output(out: std::process::Output, cancelled: bool, timed_out: bool) -> ScriptRunResult {
-    let stdout = truncate_output(String::from_utf8_lossy(&out.stdout).into_owned());
-    let mut stderr = truncate_output(String::from_utf8_lossy(&out.stderr).into_owned());
-    if timed_out {
-        let note = format!("\n\n[scripts] run timed out after {RUN_TIMEOUT_SECS}s and was killed");
-        if stderr.is_empty() {
-            stderr = note.trim_start().to_string();
-        } else {
-            stderr.push_str(&note);
-        }
-    }
-    ScriptRunResult {
-        exit_code: out.status.code(),
-        stdout,
-        stderr,
-        cancelled,
-    }
-}
-
-fn truncate_output(raw: String) -> String {
-    if raw.len() <= OUTPUT_CAP_BYTES {
-        return raw;
-    }
-    let mut cut = OUTPUT_CAP_BYTES;
-    while cut > 0 && !raw.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    format!(
-        "{}\n\n… [truncated, total {} bytes, cap {}]",
-        &raw[..cut],
-        raw.len(),
-        OUTPUT_CAP_BYTES
-    )
-}
-
-fn cleanup_orphan_run_scripts(run_dir: &Path) {
-    let Ok(entries) = std::fs::read_dir(run_dir) else {
+/// 下次运行前清理孤儿临时脚本（app 崩溃/断电残留）。
+async fn cleanup_orphan_run_scripts(run_dir: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(run_dir).await else {
         return;
     };
-    for entry in entries.flatten() {
+    while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let name = name.to_string_lossy();
         if name.starts_with("run-") && name.ends_with(".py") {
-            let _ = std::fs::remove_file(entry.path());
+            let _ = tokio::fs::remove_file(entry.path()).await;
         }
-    }
-}
-
-fn kill_pid(pid: u32) {
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(unix)]
-    {
-        let _ = std::process::Command::new("kill")
-            .args(["-TERM", &pid.to_string()])
-            .status();
     }
 }
