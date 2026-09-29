@@ -192,10 +192,12 @@ async function openItem(id: number) {
   min-height: 0;
   padding: var(--space-4);
   gap: var(--space-3);
-  overflow: auto;
+  /* 头部钉住，仅列表滚动（脚本多时「新建」不滚出视口） */
+  overflow: hidden;
 }
 
 .head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -221,6 +223,11 @@ async function openItem(id: number) {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* 滚动条贴窗右（页面级惯例） */
+  scrollbar-gutter: stable;
 }
 
 .item {
@@ -254,6 +261,11 @@ async function openItem(id: number) {
 
 .name {
   font-weight: 600;
+  /* 与 .desc 一致：长名单行省略 */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .desc {

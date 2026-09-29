@@ -149,7 +149,7 @@ function onTypeChange(index: number, type: ScriptParamType) {
       >
         <option value="">{{ t("scripts.venvFollowGlobal") }}</option>
         <option v-for="v in venvs" :key="v.name" :value="v.name">
-          {{ v.name }}<template v-if="v.pythonVersion">（{{ v.pythonVersion }}）</template>
+          {{ v.name }}<template v-if="v.pythonVersion"> ({{ v.pythonVersion }})</template>
         </option>
       </select>
       <span class="hint">{{ t("scripts.venvBindHint") }}</span>

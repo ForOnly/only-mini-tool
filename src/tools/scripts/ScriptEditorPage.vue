@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppConfirm from "@/components/common/AppConfirm.vue";
@@ -136,6 +136,35 @@ async function onCancel() {
     report(err);
   }
 }
+
+/** 状态文字（未保存 · 计时器）——LogPanel 头部唯一持久状态位 */
+const now = ref(Date.now());
+let statusTimer: number | undefined;
+watch(running, (isRunning) => {
+  if (isRunning && statusTimer == undefined) {
+    statusTimer = window.setInterval(() => {
+      now.value = Date.now();
+    }, 1000);
+  } else if (!isRunning && statusTimer != undefined) {
+    window.clearInterval(statusTimer);
+    statusTimer = undefined;
+  }
+}, { immediate: true });
+onBeforeUnmount(() => {
+  if (statusTimer != undefined) window.clearInterval(statusTimer);
+});
+
+const elapsed = computed(() => {
+  if (!running.value || startedAt.value == null) return null;
+  return Math.max(0, Math.floor((now.value - startedAt.value) / 1000));
+});
+
+const statusText = computed(() => {
+  const parts: string[] = [];
+  if (dirty.value) parts.push(t("scripts.dirty"));
+  if (elapsed.value != null) parts.push(t("scripts.runTimer", { secs: elapsed.value }));
+  return parts.join(" · ");
+});
 </script>
 
 <template>
@@ -146,7 +175,6 @@ async function onCancel() {
           :dirty="dirty"
           :running="running"
           :saving="saving"
-          :run-started-at="startedAt"
           @back="requestBack"
           @save="onSave"
           @run="onRun"
@@ -168,7 +196,12 @@ async function onCancel() {
         />
       </section>
     </div>
-    <ScriptLogPanel :result="lastResult" :running="running" />
+    <ScriptLogPanel
+      :result="lastResult"
+      :running="running"
+      :status-text="statusText"
+      :status-dirty="dirty"
+    />
 
     <AppConfirm
       :open="leaveOpen"
@@ -196,11 +229,12 @@ async function onCancel() {
   flex: 1;
   min-height: 0;
   display: flex;
+  /* LogPanel 拖高钳制的兜底：编辑区内容溢出时裁剪而非压盖日志面板 */
+  overflow: hidden;
 }
 
 .left {
   width: min(340px, 38%);
-  min-width: 260px;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;

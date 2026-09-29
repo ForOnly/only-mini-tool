@@ -1,15 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 
-const props = defineProps<{
+defineProps<{
   dirty: boolean;
   running: boolean;
   saving?: boolean;
-  /** 本次运行开始时间戳（ms）；来自 useScriptRun，跨页面切换保持准确 */
-  runStartedAt?: number | null;
 }>();
 
 const emit = defineEmits<{
@@ -20,50 +17,37 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-
-const now = ref(Date.now());
-let timer: number | undefined;
-
-watch(
-  () => props.running,
-  (running) => {
-    if (running && timer == undefined) {
-      timer = window.setInterval(() => {
-        now.value = Date.now();
-      }, 1000);
-    } else if (!running && timer != undefined) {
-      window.clearInterval(timer);
-      timer = undefined;
-    }
-  },
-  { immediate: true },
-);
-
-onBeforeUnmount(() => {
-  if (timer != undefined) window.clearInterval(timer);
-});
-
-const elapsed = computed(() => {
-  if (!props.running || props.runStartedAt == null) return null;
-  return Math.max(0, Math.floor((now.value - props.runStartedAt) / 1000));
-});
-
-/** 状态文字：「未保存 · 12s」——合并展示减少折行 */
-const statusText = computed(() => {
-  const parts: string[] = [];
-  if (props.dirty) parts.push(t("scripts.dirty"));
-  if (elapsed.value != null) parts.push(t("scripts.runTimer", { secs: elapsed.value }));
-  return parts.join(" · ");
-});
 </script>
 
 <template>
   <div class="run-bar">
-    <AppButton variant="ghost" type="button" @click="emit('back')">
-      {{ t("scripts.backToList") }}
+    <!-- 图标化返回（状态文字已移 LogPanel 头部）：三按钮在 250px 窄栏稳定单行 -->
+    <AppButton
+      variant="ghost"
+      type="button"
+      class="icon-btn"
+      :title="t('scripts.backToList')"
+      :aria-label="t('scripts.backToList')"
+      @click="emit('back')"
+    >
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="icon">
+        <path
+          d="M9 14L4 9l5-5"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M4 9h10.5a5.5 5.5 0 0 1 0 11H14"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
     </AppButton>
     <div class="spacer" />
-    <span v-if="statusText" class="status" :class="{ dirty: dirty }">{{ statusText }}</span>
     <AppButton variant="ghost" type="button" :disabled="saving || !dirty" @click="emit('save')">
       {{ t("scripts.save") }}
     </AppButton>
@@ -89,21 +73,20 @@ const statusText = computed(() => {
   gap: var(--space-2);
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
-  flex-wrap: wrap;
 }
 
 .spacer {
   flex: 1;
 }
 
-.status {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+.icon-btn {
+  min-width: 32px;
+  padding: var(--space-1);
 }
 
-.status.dirty {
-  color: var(--warning, #c47f17);
+.icon {
+  width: 16px;
+  height: 16px;
+  display: block;
 }
 </style>

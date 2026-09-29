@@ -113,6 +113,8 @@ async function pickPath(def: ScriptParamDef) {
 
 .row > :deep(.app-input) {
   flex: 1;
+  /* 与 MetaPanel 对齐：允许收缩避免 en 长按钮挤出新横向滚动 */
+  min-width: 0;
 }
 
 select {

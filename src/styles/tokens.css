@@ -70,6 +70,8 @@
 }
 
 html[data-scheme="light"] {
+  /* 原生控件（select 弹层/checkbox/滚动条默认）跟随明色 */
+  color-scheme: light;
   --bg: #f1f5f9;
   --surface: #ffffff;
   --surface-2: #e2e8f0;
@@ -79,6 +81,8 @@ html[data-scheme="light"] {
 }
 
 html[data-scheme="dark"] {
+  /* 原生控件弹层（select options/checkbox）呈深色，避免暗色页面弹白色下拉 */
+  color-scheme: dark;
   --bg: #0f172a;
   --surface: #1e293b;
   --surface-2: #334155;
@@ -94,6 +98,7 @@ html[data-scheme="dark"] {
 /* 无 data-scheme 时回退到系统偏好 */
 @media (prefers-color-scheme: dark) {
   :root:not([data-scheme]) {
+    color-scheme: dark;
     --bg: #0f172a;
     --surface: #1e293b;
     --surface-2: #334155;
