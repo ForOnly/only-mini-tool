@@ -88,6 +88,21 @@ function addParam() {
     passAs: "env",
   });
   patch({ paramsSchema: schema });
+  // 新卡默认展开（正在编辑）；存量参数默认折叠（左栏纵向减负）
+  expandedParams.value = new Set([...expandedParams.value, schema.length - 1]);
+}
+
+/** 展开的参数卡索引（按 index 跟随；删除重排后折叠态重置可接受——个人工具） */
+const expandedParams = ref<Set<number>>(new Set());
+
+function toggleParam(index: number) {
+  const next = new Set(expandedParams.value);
+  if (next.has(index)) {
+    next.delete(index);
+  } else {
+    next.add(index);
+  }
+  expandedParams.value = next;
 }
 
 function updateParam(index: number, partial: Partial<ScriptParamDef>) {
@@ -173,8 +188,15 @@ function onTypeChange(index: number, type: ScriptParamType) {
           :placeholder="t('scripts.envValue')"
           @update:model-value="updateEnvValue(index, $event)"
         />
-        <AppButton variant="ghost" type="button" @click="removeEnvRow(index)">
-          {{ t("scripts.remove") }}
+        <AppButton
+          variant="ghost"
+          type="button"
+          class="x-btn"
+          :title="t('scripts.remove')"
+          :aria-label="t('scripts.remove')"
+          @click="removeEnvRow(index)"
+        >
+          ✕
         </AppButton>
       </div>
     </div>
@@ -190,114 +212,156 @@ function onTypeChange(index: number, type: ScriptParamType) {
         v-for="(param, index) in draft.paramsSchema"
         :key="index"
         class="param-card"
+        :class="{ collapsed: !expandedParams.has(index) }"
       >
-        <div class="row">
-          <AppInput
-            :model-value="param.key"
-            :placeholder="t('scripts.paramKey')"
-            @update:model-value="updateParam(index, { key: $event })"
-          />
-          <AppInput
-            :model-value="param.label"
-            :placeholder="t('scripts.paramLabel')"
-            @update:model-value="updateParam(index, { label: $event })"
-          />
+        <!-- 折叠态头部：摘要一行（key · label · type）+ 展开箭头 + 删除 -->
+        <div class="param-head">
+          <button
+            type="button"
+            class="param-toggle"
+            :aria-expanded="expandedParams.has(index)"
+            @click="toggleParam(index)"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              class="chevron"
+              :class="{ open: expandedParams.has(index) }"
+            >
+              <path
+                d="M9 6l6 6-6 6"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="param-summary">
+              {{ param.key || "?" }} · {{ param.label || "?" }}
+              <em class="param-type">{{ param.type }}</em>
+              <template v-if="param.required"> *</template>
+            </span>
+          </button>
+          <AppButton
+            variant="ghost"
+            type="button"
+            class="x-btn"
+            :title="t('scripts.remove')"
+            :aria-label="t('scripts.remove')"
+            @click="removeParam(index)"
+          >
+            ✕
+          </AppButton>
         </div>
-        <div class="row">
-          <select
-            :value="param.type"
-            @change="onTypeChange(index, ($event.target as HTMLSelectElement).value as ScriptParamType)"
-          >
-            <option value="string">string</option>
-            <option value="number">number</option>
-            <option value="boolean">boolean</option>
-            <option value="select">select</option>
-            <option value="path">path</option>
-          </select>
-          <select
-            :value="param.passAs"
-            @change="
-              updateParam(index, {
-                passAs: ($event.target as HTMLSelectElement).value as 'env' | 'arg' | 'stdin',
-              })
-            "
-          >
-            <option value="env">env</option>
-            <option value="arg">arg</option>
-            <option value="stdin">stdin</option>
-          </select>
-          <label class="check">
-            <input
-              type="checkbox"
-              :checked="param.required"
+        <template v-if="expandedParams.has(index)">
+          <div class="row">
+            <AppInput
+              :model-value="param.key"
+              :placeholder="t('scripts.paramKey')"
+              @update:model-value="updateParam(index, { key: $event })"
+            />
+            <AppInput
+              :model-value="param.label"
+              :placeholder="t('scripts.paramLabel')"
+              @update:model-value="updateParam(index, { label: $event })"
+            />
+          </div>
+          <div class="row">
+            <select
+              :value="param.type"
+              @change="onTypeChange(index, ($event.target as HTMLSelectElement).value as ScriptParamType)"
+            >
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+              <option value="select">select</option>
+              <option value="path">path</option>
+            </select>
+            <select
+              :value="param.passAs"
               @change="
                 updateParam(index, {
-                  required: ($event.target as HTMLInputElement).checked,
+                  passAs: ($event.target as HTMLSelectElement).value as 'env' | 'arg' | 'stdin',
+                })
+              "
+            >
+              <option value="env">env</option>
+              <option value="arg">arg</option>
+              <option value="stdin">stdin</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="check">
+              <input
+                type="checkbox"
+                :checked="param.required"
+                @change="
+                  updateParam(index, {
+                    required: ($event.target as HTMLInputElement).checked,
+                  })
+                "
+              />
+              {{ t("scripts.required") }}
+            </label>
+          </div>
+          <!-- default：boolean 勾选、select 下拉（有选项时）、其余文本 -->
+          <label v-if="param.type === 'boolean'" class="check">
+            <input
+              type="checkbox"
+              :checked="param.default === 'true'"
+              @change="
+                updateParam(index, {
+                  default: ($event.target as HTMLInputElement).checked ? 'true' : undefined,
                 })
               "
             />
-            {{ t("scripts.required") }}
+            {{ t("scripts.paramDefault") }}
           </label>
-          <AppButton variant="ghost" type="button" @click="removeParam(index)">
-            {{ t("scripts.remove") }}
-          </AppButton>
-        </div>
-        <!-- default：boolean 勾选、select 下拉（有选项时）、其余文本 -->
-        <label v-if="param.type === 'boolean'" class="check">
-          <input
-            type="checkbox"
-            :checked="param.default === 'true'"
+          <select
+            v-else-if="param.type === 'select' && (param.options ?? []).length"
+            :value="param.default ?? ''"
             @change="
               updateParam(index, {
-                default: ($event.target as HTMLInputElement).checked ? 'true' : undefined,
+                default: ($event.target as HTMLSelectElement).value || undefined,
+              })
+            "
+          >
+            <option value="">—</option>
+            <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
+          </select>
+          <AppInput
+            v-else
+            :model-value="param.default ?? ''"
+            :placeholder="t('scripts.paramDefault')"
+            @update:model-value="updateParam(index, { default: $event || undefined })"
+          />
+          <AppInput
+            v-if="param.type === 'select'"
+            :model-value="(param.options ?? []).join(',')"
+            :placeholder="t('scripts.selectOptions')"
+            @update:model-value="
+              updateParam(index, {
+                options: $event
+                  .split(',')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
               })
             "
           />
-          {{ t("scripts.paramDefault") }}
-        </label>
-        <select
-          v-else-if="param.type === 'select' && (param.options ?? []).length"
-          :value="param.default ?? ''"
-          @change="
-            updateParam(index, {
-              default: ($event.target as HTMLSelectElement).value || undefined,
-            })
-          "
-        >
-          <option value="">—</option>
-          <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
-        </select>
-        <AppInput
-          v-else
-          :model-value="param.default ?? ''"
-          :placeholder="t('scripts.paramDefault')"
-          @update:model-value="updateParam(index, { default: $event || undefined })"
-        />
-        <AppInput
-          v-if="param.type === 'select'"
-          :model-value="(param.options ?? []).join(',')"
-          :placeholder="t('scripts.selectOptions')"
-          @update:model-value="
-            updateParam(index, {
-              options: $event
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-            })
-          "
-        />
-        <select
-          v-if="param.type === 'path'"
-          :value="param.pathMode ?? 'file'"
-          @change="
-            updateParam(index, {
-              pathMode: ($event.target as HTMLSelectElement).value as 'file' | 'dir',
-            })
-          "
-        >
-          <option value="file">{{ t("scripts.pathFile") }}</option>
-          <option value="dir">{{ t("scripts.pathDir") }}</option>
-        </select>
+          <select
+            v-if="param.type === 'path'"
+            :value="param.pathMode ?? 'file'"
+            @change="
+              updateParam(index, {
+                pathMode: ($event.target as HTMLSelectElement).value as 'file' | 'dir',
+              })
+            "
+          >
+            <option value="file">{{ t("scripts.pathFile") }}</option>
+            <option value="dir">{{ t("scripts.pathDir") }}</option>
+          </select>
+        </template>
       </div>
     </div>
   </div>
@@ -363,6 +427,71 @@ function onTypeChange(index: number, type: ScriptParamType) {
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+}
+
+.param-card.collapsed {
+  gap: 0;
+  padding: var(--space-1) var(--space-2);
+}
+
+.param-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.param-toggle {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-1);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+
+.param-toggle:hover {
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent));
+}
+
+.chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform var(--motion-fast);
+  color: var(--text-muted);
+}
+
+.chevron.open {
+  transform: rotate(90deg);
+}
+
+.param-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.param-type {
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: var(--text-xs, 12px);
+}
+
+.x-btn {
+  min-width: 32px;
+  padding: var(--space-1);
+  flex-shrink: 0;
 }
 
 .check {
