@@ -22,6 +22,8 @@ const { t } = useI18n();
 
 <style scoped>
 .settings {
+  /* 两缘常留 gutter：720px 列永久居中不跳（滚动条贴窗右裁定不变） */
+  scrollbar-gutter: stable both-edges;
   width: 100%;
   height: 100%;
   overflow: auto;

@@ -88,7 +88,7 @@ onBeforeUnmount(() => {
         {{ t("scripts.copyCommand") }}
       </AppButton>
     </div>
-    <pre class="body">{{ text }}</pre>
+    <pre class="body" data-scrollbar="thin">{{ text }}</pre>
   </aside>
 </template>
 

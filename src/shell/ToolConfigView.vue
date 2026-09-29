@@ -27,6 +27,7 @@ const title = computed(() =>
 
 <style scoped>
 .config {
+  scrollbar-gutter: stable both-edges;
   width: 100%;
   height: 100%;
   overflow: auto;

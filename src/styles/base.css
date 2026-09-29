@@ -25,6 +25,40 @@ select {
   outline-offset: 2px;
 }
 
+/* 滚动条：全局细条（占位式），变体 data-scrollbar="thin"。
+   - 自定义伪元素会禁用 WebView2 可能启用的 overlay/fluent 滚动条，强制经典
+     占位式——可预测性的来源，非兼容性损失
+   - 禁用标准 scrollbar-width/scrollbar-color（Chromium 121+ 会静默覆盖本方案）
+   - 仅颜色过渡、无运动学内容，故不设 prefers-reduced-motion 分支 */
+::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: calc(var(--scrollbar-size) / 2);
+  background-color: var(--scrollbar-thumb);
+  transition: background-color var(--motion-fast); /* 渐进增强，Chromium 可能直接跳变 */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+[data-scrollbar="thin"]::-webkit-scrollbar {
+  width: var(--scrollbar-size-thin);
+  height: var(--scrollbar-size-thin);
+}
+
+[data-scrollbar="thin"]::-webkit-scrollbar-thumb {
+  border-radius: calc(var(--scrollbar-size-thin) / 2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

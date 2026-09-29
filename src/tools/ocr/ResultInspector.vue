@@ -288,7 +288,7 @@ function onResizePointerDown(event: PointerEvent) {
         <template v-if="resultTab === 'log'">
           <section class="list" role="tabpanel">
             <p v-if="copyLog.length === 0" class="empty">{{ t("ocr.copyLogEmpty") }}</p>
-            <ul v-else>
+            <ul v-else data-scrollbar="thin">
               <li v-for="entry in copyLog" :key="entry.id">
                 <div class="log-main">
                   <span class="log-time">{{ formatLogTime(entry.at) }}</span>
@@ -308,10 +308,10 @@ function onResizePointerDown(event: PointerEvent) {
         </template>
         <template v-else>
           <section v-if="resultTab === 'full'" class="full" role="tabpanel">
-            <pre class="full-text">{{ fullText }}</pre>
+            <pre class="full-text" data-scrollbar="thin">{{ fullText }}</pre>
           </section>
           <section v-else class="list" role="tabpanel">
-            <ul ref="listEl">
+            <ul ref="listEl" data-scrollbar="thin">
               <li
                 v-for="(word, index) in words"
                 :key="index"

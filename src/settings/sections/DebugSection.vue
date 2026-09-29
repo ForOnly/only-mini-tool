@@ -122,7 +122,7 @@ async function onOpenDevtools() {
         </div>
       </div>
       <p v-if="logsPath" class="path">{{ logsPath }}</p>
-      <pre class="log">{{ logText || t("settings.logsEmpty") }}</pre>
+      <pre class="log" data-scrollbar="thin">{{ logText || t("settings.logsEmpty") }}</pre>
     </div>
   </div>
 </template>
@@ -179,6 +179,8 @@ h2 {
 }
 
 .log {
+  /* 全项目唯一真实滚动链：滚到底不甩到外层设置页 */
+  overscroll-behavior: contain;
   margin: 0;
   max-height: 320px;
   overflow: auto;

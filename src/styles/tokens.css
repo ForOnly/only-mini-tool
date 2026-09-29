@@ -45,6 +45,13 @@
   --motion-normal: 160ms ease;
   --transition: var(--motion-normal);
 
+  /* 滚动条（::-webkit-scrollbar；派生自 --text-muted，随 data-scheme 自动切换）。
+     禁用标准 scrollbar-width/scrollbar-color（Chromium 121+ 会覆盖伪元素方案）。 */
+  --scrollbar-size: 10px;
+  --scrollbar-size-thin: 6px;
+  --scrollbar-thumb: color-mix(in srgb, var(--text-muted) 45%, transparent);
+  --scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 75%, transparent);
+
   --shadow-panel: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
   --shadow-menu: 0 4px 16px color-mix(in srgb, #000 18%, transparent);
   --shadow-message: 0 8px 24px color-mix(in srgb, #000 12%, transparent);

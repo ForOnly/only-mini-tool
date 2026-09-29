@@ -126,7 +126,7 @@ async function onCancel() {
           @run="onRun"
           @cancel="onCancel"
         />
-        <div class="left-scroll">
+        <div class="left-scroll" data-scrollbar="thin">
           <ScriptMetaPanel v-model:draft="leftDraft" />
           <ScriptParamForm
             :schema="draft.paramsSchema"

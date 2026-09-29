@@ -34,6 +34,12 @@ onMounted(() => {
     fontSize: 13,
     theme: scheme === "dark" ? "vs-dark" : "vs",
     scrollBeyondLastLine: false,
+    // Monaco 自绘 DOM 滚动条不吃 CSS 伪元素，走 option 对齐全局滚动条
+    scrollbar: {
+      verticalScrollbarSize: 10, // 对齐 --scrollbar-size
+      horizontalScrollbarSize: 10,
+      useShadows: false,
+    },
   });
   editor.onDidChangeModelContent(() => {
     emit("update:modelValue", editor?.getValue() ?? "");
