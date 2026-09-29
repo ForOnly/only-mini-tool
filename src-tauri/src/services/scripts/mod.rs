@@ -1,7 +1,10 @@
 //! 脚本库：CRUD + Python 进程执行（无沙盒）。
 
+pub mod prepare;
+pub mod validate;
+
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
@@ -12,10 +15,10 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::domain::{
-    ScriptCreate, ScriptDto, ScriptParamDef, ScriptParamPassAs, ScriptParamType, ScriptRunRequest,
-    ScriptRunResult, ScriptSummary, ScriptUpdate, ScriptsSettingsBundle, ScriptsSettingsSave,
-    DEFAULT_SCRIPTS_ENV_JSON, DEFAULT_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_DEFAULT_WORKSPACE,
-    SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_PYTHON_PATH,
+    ScriptCreate, ScriptDto, ScriptRunRequest, ScriptRunResult, ScriptSummary, ScriptUpdate,
+    ScriptsSettingsBundle, ScriptsSettingsSave, DEFAULT_SCRIPTS_ENV_JSON,
+    DEFAULT_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_DEFAULT_WORKSPACE, SETTING_SCRIPTS_ENV_JSON,
+    SETTING_SCRIPTS_PYTHON_PATH,
 };
 use crate::errors::AppError;
 use crate::infrastructure::database::Database;
@@ -54,12 +57,20 @@ impl ScriptsService {
         db.with_conn(|conn| ScriptsRepo::get(conn, id))
     }
 
-    pub fn create(db: &Database, payload: ScriptCreate) -> Result<ScriptDto, AppError> {
+    pub fn create(db: &Database, mut payload: ScriptCreate) -> Result<ScriptDto, AppError> {
+        payload.name = validate::validate_name(&payload.name)?;
+        payload.description = payload.description.trim().to_string();
         db.with_conn(|conn| ScriptsRepo::create(conn, &payload))
     }
 
-    pub fn update(db: &Database, id: i64, payload: ScriptUpdate) -> Result<ScriptDto, AppError> {
-        validate_params_schema(&payload.params_schema)?;
+    pub fn update(
+        db: &Database,
+        id: i64,
+        mut payload: ScriptUpdate,
+    ) -> Result<ScriptDto, AppError> {
+        payload.name = validate::validate_name(&payload.name)?;
+        payload.description = payload.description.trim().to_string();
+        validate::validate_params_schema(&payload.params_schema)?;
         db.with_conn(|conn| ScriptsRepo::update(conn, id, &payload))
     }
 
@@ -68,6 +79,7 @@ impl ScriptsService {
     }
 
     pub fn rename(db: &Database, id: i64, name: String) -> Result<ScriptDto, AppError> {
+        let name = validate::validate_name(&name)?;
         db.with_conn(|conn| ScriptsRepo::rename(conn, id, &name))
     }
 
@@ -144,22 +156,25 @@ impl ScriptsService {
                 message: format!("unsupported language: {}", script.language),
             });
         }
-        validate_run_params(&script.params_schema, &payload.params)?;
+
+        let effective = prepare::effective_params(&script.params_schema, &payload.params);
+        validate::validate_run_params(&script.params_schema, &effective)?;
 
         let settings = Self::get_settings(db)?;
-        let interpreter = script
-            .interpreter_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or(settings.python_path.trim());
+        let interpreter =
+            prepare::resolve_interpreter(script.interpreter_path.as_deref(), &settings.python_path);
         if interpreter.is_empty() {
             return Err(AppError::ValidationError {
                 message: "python interpreter path is empty".into(),
             });
         }
 
-        let cwd = resolve_cwd(app, &script.workspace_path, &settings.default_workspace)?;
+        let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
+        let cwd = prepare::resolve_cwd(
+            script.workspace_path.as_deref(),
+            &settings.default_workspace,
+            fallback_dir,
+        );
         std::fs::create_dir_all(&cwd).map_err(|e| AppError::InternalError {
             message: format!("create workspace cwd: {e}"),
         })?;
@@ -176,60 +191,13 @@ impl ScriptsService {
             }
         })?;
 
-        let mut env = HashMap::new();
-        for (k, v) in std::env::vars() {
-            env.insert(k, v);
-        }
-        for (k, v) in &settings.env {
-            env.insert(k.clone(), v.clone());
-        }
-        for (k, v) in &script.env {
-            env.insert(k.clone(), v.clone());
-        }
+        let projected = prepare::project_params(&script.params_schema, &effective);
+        let process_env: HashMap<String, String> = std::env::vars().collect();
+        let env = prepare::merge_env(process_env, &settings.env, &script.env, &projected.envs);
+        // passAs=stdin 的参数（projected.stdin）由执行内核以 JSON 文档写入子进程 stdin
+        let args = prepare::build_args(&script.args_template, &script_path, &projected.args);
 
-        let mut dyn_args = Vec::new();
-        for def in &script.params_schema {
-            let raw = payload.params.get(&def.key).cloned().unwrap_or_default();
-            match def.pass_as {
-                ScriptParamPassAs::Env => {
-                    let env_key = format!("PARAM_{}", def.key.to_uppercase());
-                    match def.param_type {
-                        ScriptParamType::Boolean => {
-                            let on = is_truthy(&raw);
-                            if on {
-                                env.insert(env_key, "1".into());
-                            } else {
-                                env.insert(env_key, "0".into());
-                            }
-                        }
-                        _ => {
-                            env.insert(env_key, raw);
-                        }
-                    }
-                }
-                ScriptParamPassAs::Arg => match def.param_type {
-                    ScriptParamType::Boolean => {
-                        if is_truthy(&raw) {
-                            dyn_args.push(format!("--{}", def.key));
-                        }
-                    }
-                    _ => {
-                        if !raw.is_empty() || def.required {
-                            dyn_args.push(format!("--{}", def.key));
-                            dyn_args.push(raw);
-                        }
-                    }
-                },
-            }
-        }
-
-        let mut args = Vec::new();
-        args.extend(script.args_template.before.iter().cloned());
-        args.push(script_path.to_string_lossy().into_owned());
-        args.extend(dyn_args);
-        args.extend(script.args_template.after.iter().cloned());
-
-        let result = match spawn_and_wait(gate, interpreter, &args, &cwd, &env).await {
+        let result = match spawn_and_wait(gate, &interpreter, &args, &cwd, &env).await {
             Ok(r) => r,
             Err(e) => {
                 let _ = std::fs::remove_file(&script_path);
@@ -375,89 +343,6 @@ fn cleanup_orphan_run_scripts(run_dir: &Path) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
-}
-
-fn resolve_cwd(
-    app: &AppHandle,
-    script_workspace: &Option<String>,
-    default_workspace: &str,
-) -> Result<PathBuf, AppError> {
-    if let Some(p) = script_workspace
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        return Ok(PathBuf::from(p));
-    }
-    let def = default_workspace.trim();
-    if !def.is_empty() {
-        return Ok(PathBuf::from(def));
-    }
-    Ok(scripts_run_dir(app)?.join("default-workspace"))
-}
-
-fn validate_params_schema(schema: &[ScriptParamDef]) -> Result<(), AppError> {
-    let mut keys = std::collections::HashSet::new();
-    for def in schema {
-        let key = def.key.trim();
-        if key.is_empty() {
-            return Err(AppError::ValidationError {
-                message: "param key is required".into(),
-            });
-        }
-        if !keys.insert(key.to_string()) {
-            return Err(AppError::ValidationError {
-                message: format!("duplicate param key: {key}"),
-            });
-        }
-        if matches!(def.param_type, ScriptParamType::Select) && def.options.is_empty() {
-            return Err(AppError::ValidationError {
-                message: format!("select param requires options: {key}"),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn validate_run_params(
-    schema: &[ScriptParamDef],
-    params: &HashMap<String, String>,
-) -> Result<(), AppError> {
-    for def in schema {
-        let raw = params.get(&def.key).map(|s| s.as_str()).unwrap_or("");
-        if def.required
-            && raw.trim().is_empty()
-            && !matches!(def.param_type, ScriptParamType::Boolean)
-        {
-            return Err(AppError::ValidationError {
-                message: format!("required param missing: {}", def.key),
-            });
-        }
-        if matches!(def.param_type, ScriptParamType::Number)
-            && !raw.trim().is_empty()
-            && raw.trim().parse::<f64>().is_err()
-        {
-            return Err(AppError::ValidationError {
-                message: format!("param {} must be a number", def.key),
-            });
-        }
-        if matches!(def.param_type, ScriptParamType::Select)
-            && !raw.is_empty()
-            && !def.options.iter().any(|o| o == raw)
-        {
-            return Err(AppError::ValidationError {
-                message: format!("param {} invalid option", def.key),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn is_truthy(raw: &str) -> bool {
-    matches!(
-        raw.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
 }
 
 fn kill_pid(pid: u32) {

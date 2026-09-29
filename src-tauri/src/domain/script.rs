@@ -22,6 +22,8 @@ pub enum ScriptParamType {
 pub enum ScriptParamPassAs {
     Env,
     Arg,
+    /// 以类型化 JSON 文档写入子进程 stdin（脚本 `json.load(sys.stdin)` 读取）。
+    Stdin,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

@@ -103,20 +103,15 @@ impl ScriptsRepo {
     }
 
     pub fn create(conn: &Connection, payload: &ScriptCreate) -> Result<ScriptDto, AppError> {
-        let name = payload.name.trim();
-        if name.is_empty() {
-            return Err(AppError::ValidationError {
-                message: "script name is required".into(),
-            });
-        }
+        // name/description 已由 service 层归一化校验
         conn.execute(
             "INSERT INTO scripts (name, description, body) VALUES (?1, ?2, ?3)",
-            params![name, payload.description.trim(), payload.body.as_str()],
+            params![payload.name, payload.description, payload.body.as_str()],
         )
         .map_err(|e| {
             if is_unique_violation(&e) {
                 AppError::ValidationError {
-                    message: format!("script name already exists: {name}"),
+                    message: format!("script name already exists: {}", payload.name),
                 }
             } else {
                 AppError::DbError {
@@ -133,12 +128,7 @@ impl ScriptsRepo {
         id: i64,
         payload: &ScriptUpdate,
     ) -> Result<ScriptDto, AppError> {
-        let name = payload.name.trim();
-        if name.is_empty() {
-            return Err(AppError::ValidationError {
-                message: "script name is required".into(),
-            });
-        }
+        // name/description 已由 service 层归一化校验
         let env_json =
             serde_json::to_string(&payload.env).map_err(|e| AppError::InternalError {
                 message: format!("serialize env: {e}"),
@@ -169,8 +159,8 @@ impl ScriptsRepo {
                     updated_at = datetime('now')
                  WHERE id = ?9",
                 params![
-                    name,
-                    payload.description.trim(),
+                    payload.name,
+                    payload.description,
                     payload.body.as_str(),
                     workspace,
                     interpreter,
@@ -183,7 +173,7 @@ impl ScriptsRepo {
             .map_err(|e| {
                 if is_unique_violation(&e) {
                     AppError::ValidationError {
-                        message: format!("script name already exists: {name}"),
+                        message: format!("script name already exists: {}", payload.name),
                     }
                 } else {
                     AppError::DbError {
@@ -214,12 +204,7 @@ impl ScriptsRepo {
     }
 
     pub fn rename(conn: &Connection, id: i64, name: &str) -> Result<ScriptDto, AppError> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err(AppError::ValidationError {
-                message: "script name is required".into(),
-            });
-        }
+        // name 已由 service 层归一化校验
         let changed = conn
             .execute(
                 "UPDATE scripts SET name = ?1, updated_at = datetime('now') WHERE id = ?2",
@@ -252,8 +237,13 @@ fn normalize_opt_path(value: &Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// UNIQUE 约束冲突的结构化判断（SQLITE_CONSTRAINT_UNIQUE = 2067）。
+/// 字符串匹配旧实现脆弱：依赖错误文案，升级 rusqlite/sqlite 即可能失效。
 fn is_unique_violation(err: &rusqlite::Error) -> bool {
-    err.to_string().to_ascii_lowercase().contains("unique")
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(e, _) if e.extended_code == 2067
+    )
 }
 
 fn parse_env_map(raw: &str) -> Result<std::collections::HashMap<String, String>, AppError> {
@@ -281,4 +271,63 @@ fn parse_args_template(raw: &str) -> Result<ScriptArgsTemplate, AppError> {
     serde_json::from_str(raw).map_err(|e| AppError::DbError {
         message: format!("invalid args_template_json: {e}"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ScriptCreate;
+    use crate::infrastructure::database::migrations::run_migrations;
+
+    fn conn() -> Connection {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        run_migrations(&conn).expect("run migrations");
+        conn
+    }
+
+    fn create_payload(name: &str) -> ScriptCreate {
+        ScriptCreate {
+            name: name.into(),
+            description: "d".into(),
+            body: "print(1)".into(),
+        }
+    }
+
+    #[test]
+    fn create_get_roundtrip() {
+        let conn = conn();
+        let dto = ScriptsRepo::create(&conn, &create_payload("hello")).expect("create");
+        assert_eq!(dto.name, "hello");
+        assert_eq!(dto.body, "print(1)");
+        assert_eq!(dto.language, "python");
+        let fetched = ScriptsRepo::get(&conn, dto.id).expect("get");
+        assert_eq!(fetched.id, dto.id);
+    }
+
+    #[test]
+    fn duplicate_name_is_validation_error() {
+        let conn = conn();
+        ScriptsRepo::create(&conn, &create_payload("a")).expect("first create");
+        let err = ScriptsRepo::create(&conn, &create_payload("a")).expect_err("dup rejected");
+        assert!(
+            matches!(err, AppError::ValidationError { .. }),
+            "unique violation must translate to ValidationError, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn update_rename_delete_missing_is_not_found() {
+        let conn = conn();
+        let dto = ScriptsRepo::create(&conn, &create_payload("x")).expect("create");
+
+        let err = ScriptsRepo::delete(&conn, dto.id + 100).expect_err("delete missing");
+        assert!(matches!(err, AppError::NotFound { .. }));
+
+        let err = ScriptsRepo::rename(&conn, dto.id + 100, "y").expect_err("rename missing");
+        assert!(matches!(err, AppError::NotFound { .. }));
+
+        ScriptsRepo::delete(&conn, dto.id).expect("delete");
+        let err = ScriptsRepo::get(&conn, dto.id).expect_err("get deleted");
+        assert!(matches!(err, AppError::NotFound { .. }));
+    }
 }

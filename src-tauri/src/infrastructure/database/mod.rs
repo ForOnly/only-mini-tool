@@ -1,4 +1,4 @@
-mod migrations;
+pub(crate) mod migrations;
 
 use std::sync::Mutex;
 
