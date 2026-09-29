@@ -63,7 +63,9 @@ pub fn validate_venv_name(name: &str) -> Result<String, AppError> {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
     if !valid {
         return Err(AppError::ValidationError {
-            message: "venv name must be ASCII letters/digits/underscore/hyphen, 1-64 chars".into(),
+            message: format!(
+                "venv name {trimmed:?} must be ASCII letters/digits/underscore/hyphen, 1-64 chars"
+            ),
         });
     }
     Ok(trimmed.to_string())

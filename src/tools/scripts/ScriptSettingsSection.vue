@@ -42,8 +42,16 @@ const envMap = computed(() => {
   return out;
 });
 
+/** 细节版错误展示：泛化文案 + 原始 message（后端细节如 exit code/stderr/校验规则）。
+ * formatAppError 命中 i18n code 键时只返回泛化文案，会吞掉细节——此处组合展示。 */
 function report(err: unknown) {
-  error(formatAppError(err, (key) => t(key)));
+  const localized = formatAppError(err, (key) => t(key));
+  const raw =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message?: unknown }).message ?? "")
+      : "";
+  const detail = raw.length > 300 ? `${raw.slice(0, 300)}…` : raw;
+  error(detail && detail !== localized ? `${localized} — ${detail}` : localized);
 }
 
 async function loadVenvs() {

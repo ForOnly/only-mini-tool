@@ -221,7 +221,7 @@ impl ScriptsService {
                 message: format!("create venv parent dir: {e}"),
             })?;
 
-        let outcome = runner::spawn_and_stream(
+        let result = match runner::spawn_and_stream(
             SpawnOptions {
                 interpreter: settings.python_path.trim().to_string(),
                 args: vec![
@@ -236,19 +236,27 @@ impl ScriptsService {
             },
             token,
         )
-        .await?;
-
-        if outcome.exit_code == Some(0) {
-            Ok(())
-        } else {
-            Err(AppError::InternalError {
+        .await
+        {
+            Ok(outcome) if outcome.exit_code == Some(0) => Ok(()),
+            Ok(outcome) => Err(AppError::InternalError {
                 message: format!(
                     "python -m venv failed (exit {:?}): {}",
                     outcome.exit_code,
                     outcome.stderr.trim()
                 ),
-            })
+            }),
+            Err(e) => Err(e),
+        };
+
+        if let Err(err) = &result {
+            // 失败清理半成品目录：python -m venv 在残留目录上必然再失败（该名称将永久失败）
+            tracing::warn!(dir = %dir.display(), error = %err, "venv creation failed, cleaning partial dir");
+            if let Err(clean_err) = tokio::fs::remove_dir_all(dir).await {
+                tracing::warn!("venv partial dir cleanup failed: {clean_err}");
+            }
         }
+        result
     }
 
     /// venv 列表：托管 `venvs/` 扫描 + 默认 workspace `.venv` 特殊条目。
