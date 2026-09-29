@@ -6,7 +6,7 @@ import AppButton from "@/components/common/AppButton.vue";
 import AppConfirm from "@/components/common/AppConfirm.vue";
 import AppInput from "@/components/common/AppInput.vue";
 import { useMessage } from "@/composables/useMessage";
-import { useScripts } from "@/tools/scripts/useScripts";
+import { useScripts, type ScriptTemplate } from "@/tools/scripts/useScripts";
 import { formatAppError } from "@/utils/error";
 
 const { t } = useI18n();
@@ -16,10 +16,18 @@ const { list, listLoaded, scriptIdNum, refreshList, createNew, rename, remove, o
 
 const createOpen = ref(false);
 const createName = ref("");
+const createTemplate = ref<ScriptTemplate>("argparse");
 const renameId = ref<number | null>(null);
 const renameName = ref("");
 const deleteId = ref<number | null>(null);
 const deleteName = ref("");
+
+const TEMPLATE_OPTIONS: { value: ScriptTemplate; labelKey: string }[] = [
+  { value: "argparse", labelKey: "scripts.templateArgparse" },
+  { value: "env", labelKey: "scripts.templateEnv" },
+  { value: "stdin", labelKey: "scripts.templateStdin" },
+  { value: "blank", labelKey: "scripts.templateBlank" },
+];
 
 function report(err: unknown) {
   error(formatAppError(err, (key) => t(key)));
@@ -39,7 +47,7 @@ async function confirmCreate() {
   createOpen.value = false;
   if (!name) return;
   try {
-    await createNew(name);
+    await createNew(name, createTemplate.value);
     success(t("scripts.created"));
   } catch (err) {
     report(err);
@@ -131,6 +139,14 @@ async function openItem(id: number) {
       @cancel="createOpen = false"
     >
       <AppInput v-model="createName" :placeholder="t('scripts.namePlaceholder')" />
+      <div class="template-row">
+        <span class="template-label">{{ t("scripts.template") }}</span>
+        <select v-model="createTemplate">
+          <option v-for="opt in TEMPLATE_OPTIONS" :key="opt.value" :value="opt.value">
+            {{ t(opt.labelKey) }}
+          </option>
+        </select>
+      </div>
     </AppConfirm>
 
     <AppConfirm
@@ -248,5 +264,29 @@ async function openItem(id: number) {
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-2);
+}
+
+.template-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.template-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.template-row select {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 var(--space-2);
 }
 </style>

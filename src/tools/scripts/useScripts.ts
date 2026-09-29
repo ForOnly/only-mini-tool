@@ -13,6 +13,41 @@ import {
 
 export type ScriptsPage = "list" | "editor";
 
+/** 新建脚本模板：body 内注释即脚本作者契约（传参方式速查）。 */
+export type ScriptTemplate = "argparse" | "env" | "stdin" | "blank";
+
+export const SCRIPT_TEMPLATES: Record<ScriptTemplate, string> = {
+  argparse: `import argparse
+
+# 参数经命令行传入：工具按参数定义拼装 --key value（boolean 仅 true 时传 --key）
+parser = argparse.ArgumentParser()
+parser.add_argument("--limit", type=int, default=10, help="示例参数")
+parser.add_argument("--debug", action="store_true", help="布尔参数示例")
+args = parser.parse_args()
+
+print("limit =", args.limit, "debug =", args.debug)
+`,
+  env: `import os
+
+# 参数经环境变量传入：工具注入 PARAM_<KEY 大写>（boolean 为 "1"/"0"）
+limit = int(os.environ.get("PARAM_LIMIT", "10"))
+debug = os.environ.get("PARAM_DEBUG", "0") == "1"
+
+print("limit =", limit, "debug =", debug)
+`,
+  stdin: `import json
+import sys
+
+# 参数经 stdin 传入：JSON 原生类型（int/float/bool/str），无参数时为 {}
+params = json.load(sys.stdin)
+limit = params.get("limit", 10)
+debug = params.get("flag", False)
+
+print("limit =", limit, "debug =", debug)
+`,
+  blank: 'print("hello from only-mini-tool")\n',
+};
+
 const PARAMS_STORAGE_PREFIX = "scripts.params.";
 
 const pageRef = ref<ScriptsPage>("list");
@@ -42,7 +77,7 @@ const dirty = computed(() => {
 });
 
 function scriptIdNum(id: ScriptDto["id"] | ScriptSummary["id"]): number {
-  return typeof id === "bigint" ? Number(id) : Number(id);
+  return Number(id);
 }
 
 function loadParamValues(id: number) {
@@ -120,11 +155,11 @@ export function useScripts() {
     }
   }
 
-  async function createNew(name: string) {
+  async function createNew(name: string, template: ScriptTemplate = "blank") {
     const dto = await createScript({
       name,
       description: "",
-      body: 'print("hello from only-mini-tool")\n',
+      body: SCRIPT_TEMPLATES[template],
     });
     await refreshList();
     await openEditor(scriptIdNum(dto.id));

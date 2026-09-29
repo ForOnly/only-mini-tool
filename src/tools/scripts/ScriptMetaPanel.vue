@@ -211,12 +211,13 @@ function onTypeChange(index: number, type: ScriptParamType) {
             :value="param.passAs"
             @change="
               updateParam(index, {
-                passAs: ($event.target as HTMLSelectElement).value as 'env' | 'arg',
+                passAs: ($event.target as HTMLSelectElement).value as 'env' | 'arg' | 'stdin',
               })
             "
           >
             <option value="env">env</option>
             <option value="arg">arg</option>
+            <option value="stdin">stdin</option>
           </select>
           <label class="check">
             <input
@@ -234,6 +235,37 @@ function onTypeChange(index: number, type: ScriptParamType) {
             {{ t("scripts.remove") }}
           </AppButton>
         </div>
+        <!-- default：boolean 勾选、select 下拉（有选项时）、其余文本 -->
+        <label v-if="param.type === 'boolean'" class="check">
+          <input
+            type="checkbox"
+            :checked="param.default === 'true'"
+            @change="
+              updateParam(index, {
+                default: ($event.target as HTMLInputElement).checked ? 'true' : undefined,
+              })
+            "
+          />
+          {{ t("scripts.paramDefault") }}
+        </label>
+        <select
+          v-else-if="param.type === 'select' && (param.options ?? []).length"
+          :value="param.default ?? ''"
+          @change="
+            updateParam(index, {
+              default: ($event.target as HTMLSelectElement).value || undefined,
+            })
+          "
+        >
+          <option value="">—</option>
+          <option v-for="opt in param.options" :key="opt" :value="opt">{{ opt }}</option>
+        </select>
+        <AppInput
+          v-else
+          :model-value="param.default ?? ''"
+          :placeholder="t('scripts.paramDefault')"
+          @update:model-value="updateParam(index, { default: $event || undefined })"
+        />
         <AppInput
           v-if="param.type === 'select'"
           :model-value="(param.options ?? []).join(',')"

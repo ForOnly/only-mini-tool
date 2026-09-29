@@ -27,7 +27,7 @@ const {
   openList,
   persistParamValues,
 } = useScripts();
-const { running, lastResult, run, cancel } = useScriptRun();
+const { running, startedAt, lastResult, run, cancel } = useScriptRun();
 
 const saving = ref(false);
 const leaveOpen = ref(false);
@@ -120,6 +120,7 @@ async function onCancel() {
           :dirty="dirty"
           :running="running"
           :saving="saving"
+          :run-started-at="startedAt"
           @back="requestBack"
           @save="onSave"
           @run="onRun"
