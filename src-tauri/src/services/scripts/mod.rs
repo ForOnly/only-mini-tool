@@ -10,6 +10,7 @@ pub mod validate;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -111,7 +112,11 @@ impl ScriptsService {
         })
     }
 
-    pub fn save_settings(db: &Database, payload: ScriptsSettingsSave) -> Result<(), AppError> {
+    pub async fn save_settings(
+        app: &AppHandle,
+        db: &Database,
+        payload: ScriptsSettingsSave,
+    ) -> Result<(), AppError> {
         let python = payload.python_path.trim();
         if python.is_empty() {
             return Err(AppError::ValidationError {
@@ -124,6 +129,10 @@ impl ScriptsService {
         if !venv.is_empty() {
             validate::validate_venv_name(venv)?;
         }
+        // 保存前以最严苛场景（命名 venv 创建 cwd = venvs 目录）探测 python 可用性：
+        // mise/pyenv shim 按目录解析，workspace 能跑不代表 venvs 目录能跑
+        probe_python(python, &venvs_dir(app)?).await?;
+
         let env_json =
             serde_json::to_string(&payload.env).map_err(|e| AppError::InternalError {
                 message: format!("serialize scripts.env: {e}"),
@@ -533,6 +542,52 @@ async fn named_venv_python(app: &AppHandle, name: &str) -> Option<String> {
     python_exists(&root.join(name)).await
 }
 
+/// 轻量探测 python 可用性（独立 spawn，不占运行单飞；继承进程 env）。
+/// cwd 用调用方指定的真实场景目录（如 venvs 根——mise/pyenv shim 按目录解析）。
+async fn probe_python(python: &str, probe_cwd: &Path) -> Result<(), AppError> {
+    let probe = async {
+        tokio::process::Command::new(python)
+            .arg("--version")
+            .current_dir(probe_cwd)
+            .stdin(Stdio::null())
+            .output()
+            .await
+    };
+    let output = match tokio::time::timeout(Duration::from_secs(10), probe).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => {
+            return Err(AppError::ValidationError {
+                message: format!(
+                    "scripts.python_path {python:?} failed to start: {e} — use the py \
+                     launcher or an absolute python.exe path"
+                ),
+            });
+        }
+        Err(_) => {
+            return Err(AppError::ValidationError {
+                message: format!("scripts.python_path {python:?} timed out on --version (10s)"),
+            });
+        }
+    };
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(if output.stderr.is_empty() {
+        &output.stdout
+    } else {
+        &output.stderr
+    });
+    Err(AppError::ValidationError {
+        message: format!(
+            "scripts.python_path {python:?} is not usable (exit {}): {} — use the py \
+             launcher or an absolute python.exe path (mise/pyenv shims resolve per-directory \
+             and may fail outside configured dirs)",
+            output.status.code().unwrap_or(-1),
+            detail.trim()
+        ),
+    })
+}
+
 /// 下次运行前清理孤儿临时脚本（app 崩溃/断电残留）。
 async fn cleanup_orphan_run_scripts(run_dir: &Path) {
     let Ok(mut entries) = tokio::fs::read_dir(run_dir).await else {
@@ -544,5 +599,37 @@ async fn cleanup_orphan_run_scripts(run_dir: &Path) {
         if name.starts_with("run-") && name.ends_with(".py") {
             let _ = tokio::fs::remove_file(entry.path()).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn probe_python_rejects_missing_program() {
+        let err = probe_python(
+            "definitely-not-a-real-python-xyz",
+            std::env::temp_dir().as_path(),
+        )
+        .await
+        .expect_err("missing program must fail");
+        assert!(
+            matches!(err, AppError::ValidationError { .. }),
+            "got: {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn probe_python_accepts_version_flag_program() {
+        // robocopy 带未知参数 exit 16——验证非零退出被拒
+        if !cfg!(windows) {
+            return;
+        }
+        let err = probe_python("robocopy", std::env::temp_dir().as_path())
+            .await
+            .expect_err("robocopy --version exits non-zero");
+        let msg = format!("{err:?}");
+        assert!(msg.contains("not usable"), "got: {msg}");
     }
 }

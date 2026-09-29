@@ -192,11 +192,12 @@ pub fn get_scripts_settings(state: State<'_, AppState>) -> Result<ScriptsSetting
 }
 
 #[tauri::command]
-pub fn save_scripts_settings(
+pub async fn save_scripts_settings(
+    app: AppHandle,
     state: State<'_, AppState>,
     payload: ScriptsSettingsSave,
 ) -> Result<(), AppError> {
-    ScriptsService::save_settings(&state.db, payload)
+    ScriptsService::save_settings(&app, &state.db, payload).await
 }
 
 #[tauri::command]
