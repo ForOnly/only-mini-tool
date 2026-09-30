@@ -56,6 +56,9 @@ pub enum AppError {
 
     #[error("{message}")]
     TerminalIo { message: String },
+
+    #[error("{message}")]
+    TerminalLimitReached { message: String },
 }
 
 impl Serialize for AppError {
@@ -83,6 +86,9 @@ impl Serialize for AppError {
             AppError::TerminalSpawn { message } => ("terminal.spawn_failed", message.as_str()),
             AppError::TerminalNotFound { message } => ("terminal.not_found", message.as_str()),
             AppError::TerminalIo { message } => ("terminal.io_failed", message.as_str()),
+            AppError::TerminalLimitReached { message } => {
+                ("terminal.limit_reached", message.as_str())
+            }
         };
 
         let mut state = serializer.serialize_struct("AppError", 2)?;

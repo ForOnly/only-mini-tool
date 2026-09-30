@@ -18,6 +18,8 @@ defineProps<{
   statusText?: string;
   statusDirty?: boolean;
   scriptId: number;
+  /** 已保存的 venv 绑定（变化 → 终端换环境） */
+  venvBinding: string;
 }>();
 
 const { t } = useI18n();
@@ -116,6 +118,7 @@ const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelRes
         v-if="terminalMounted"
         v-show="activeTab === 'terminal'"
         :script-id="scriptId"
+        :venv-binding="venvBinding"
       />
     </div>
   </aside>

@@ -78,10 +78,23 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|_app, event| match event {
+            // 窗口销毁：自动回收该窗口名下终端会话（覆盖子窗正常关闭与 webview 异常消亡）
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } => {
+                let disposed =
+                    services::terminal::TerminalRegistry::global().dispose_owned_by(&label);
+                if disposed > 0 {
+                    tracing::info!("[terminal] disposed {disposed} session(s) owned by window {label}");
+                }
+            }
             // app 退出：杀全部终端会话进程树（防 conhost/shell 残留）
-            if let tauri::RunEvent::Exit = event {
+            tauri::RunEvent::Exit => {
                 services::terminal::TerminalRegistry::global().dispose_all();
             }
+            _ => {}
         });
 }

@@ -80,6 +80,7 @@ onMounted(() => {
   void loadVenvs();
 });
 const {
+  current,
   draft,
   dirty,
   paramValues,
@@ -288,6 +289,7 @@ const statusText = computed(() => {
       :status-text="statusText"
       :status-dirty="dirty"
       :script-id="scriptIdNum(draft.id)"
+      :venv-binding="current?.venvName ?? ''"
     />
 
     <AppConfirm

@@ -92,8 +92,9 @@ struct SessionMeta {
 pub struct TerminalSession {
     pub id: String,
     meta: SessionMeta,
-    master: Mutex<Box<dyn MasterPty + Send>>,
-    writer: Mutex<Box<dyn Write + Send>>,
+    /// dispose 后置 None（强制关闭 PTY——reader 必得 EOF，线程必然退出）
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
+    writer: Mutex<Option<Box<dyn Write + Send>>>,
     scrollback: Mutex<Scrollback>,
     subscribers: Mutex<Vec<Subscriber>>,
     child_pid: Option<u32>,
@@ -163,8 +164,8 @@ impl TerminalSession {
                 title: cfg.title,
                 created_at,
             },
-            master: Mutex::new(master),
-            writer: Mutex::new(writer),
+            master: Mutex::new(Some(master)),
+            writer: Mutex::new(Some(writer)),
             scrollback: Mutex::new(Scrollback::new(SCROLLBACK_BUDGET_BYTES)),
             subscribers: Mutex::new(Vec::new()),
             child_pid,
@@ -235,10 +236,12 @@ impl TerminalSession {
     }
 
     pub fn write(&self, data: &str) -> Result<(), AppError> {
-        let mut writer = self
-            .writer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(writer) = guard.as_mut() else {
+            return Err(AppError::TerminalIo {
+                message: "session closed".into(),
+            });
+        };
         writer
             .write_all(data.as_bytes())
             .and_then(|_| writer.flush())
@@ -248,7 +251,12 @@ impl TerminalSession {
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), AppError> {
-        let master = self.master.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self.master.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(master) = guard.as_mut() else {
+            return Err(AppError::TerminalIo {
+                message: "session closed".into(),
+            });
+        };
         master
             .resize(PtySize {
                 rows,
@@ -301,10 +309,17 @@ impl TerminalSession {
         *self.exit_code.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// 销毁：杀进程树；PTY 随会话结构 drop 关闭（registry.remove 后、线程退出释放 Arc）。
-    /// 幂等（进程已不在则 taskkill 失败被忽略）。
+    /// 销毁：杀进程树 + **立即关闭 PTY**（take 置 None 触发 drop → ClosePseudoConsole）
+    /// ——reader 必得 EOF、broadcaster/waiter 线程必然退出，根治孙进程幸存时
+    /// 「reader 无 EOF → 线程常驻 → 句柄泄漏」路径。幂等（take None 为 no-op）。
     pub fn dispose(&self) {
         runner::kill_tree(self.child_pid);
+        if let Ok(mut guard) = self.master.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.writer.lock() {
+            *guard = None;
+        }
     }
 
     pub fn is_exited(&self) -> bool {
@@ -390,10 +405,22 @@ impl TerminalSession {
     }
 
     fn broadcast_exit(&self) {
+        // reader EOF 与 waiter 记录退出码并发——小窗口等 exited 置位
+        // （waiter 先写 code 再置 exited，故 exited 后 code 为终值；≤500ms）
+        let mut exit_code = self.current_exit_code();
+        if exit_code.is_none() {
+            for _ in 0..10 {
+                std::thread::sleep(Duration::from_millis(50));
+                if self.exited.load(Ordering::Acquire) {
+                    exit_code = self.current_exit_code();
+                    break;
+                }
+            }
+        }
         let event = TerminalEvent {
             kind: TerminalEventKind::Exit,
             data: String::new(),
-            exit_code: self.current_exit_code(),
+            exit_code,
         };
         self.subscribers
             .lock()

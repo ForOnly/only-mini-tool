@@ -14,18 +14,26 @@ use crate::state::AppState;
 #[tauri::command]
 pub fn terminal_create(
     app: AppHandle,
+    window: tauri::Window,
     state: State<'_, AppState>,
     payload: TerminalCreatePayload,
 ) -> Result<TerminalInfo, AppError> {
-    TerminalRegistry::global().create(&app, &state.db, payload)
+    TerminalRegistry::global().create(&app, &state.db, payload, window.label())
 }
 
 /// 附着会话：Channel 首条消息为 Replay（scrollback 快照），此后为增量 Output；
-/// 返回 attachId 供视图卸载时 detach。
+/// 返回 attachId 供视图卸载时 detach。非 main 窗口 attach 即取得会话归属
+/// （关窗 = Destroyed → 自动销毁，覆盖子窗异常消亡）。
 #[tauri::command]
-pub fn terminal_attach(id: String, on_event: Channel<TerminalEvent>) -> Result<String, AppError> {
+pub fn terminal_attach(
+    window: tauri::Window,
+    id: String,
+    on_event: Channel<TerminalEvent>,
+) -> Result<String, AppError> {
     let session = find_session(&id)?;
-    Ok(session.attach(on_event))
+    let attach_id = session.attach(on_event);
+    TerminalRegistry::global().attach_owner(&id, window.label());
+    Ok(attach_id)
 }
 
 #[tauri::command]

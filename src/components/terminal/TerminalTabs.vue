@@ -3,7 +3,7 @@
  *  两种用法：内嵌（设置页展开区，addSession 按 venv 追加标签）/ 子窗口
  *  （attachOnlyIds 附着既有会话，或「+」新建）。标签关闭即销毁该会话（D3）。 */
 
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
@@ -38,6 +38,8 @@ const { disposeSession, disposeById, getSession } = useTerminalSessions();
 
 const tabs = ref<TabDef[]>([]);
 const activeKey = ref<string | null>(null);
+/** 是否已空标签（供宿主判断「全部关闭」竞态） */
+const isEmpty = computed(() => tabs.value.length === 0);
 let seq = 0;
 
 /** 追加会话标签（同键幂等：已存在则仅激活）。返回标签键。 */
@@ -57,14 +59,13 @@ async function addSession(
   return key;
 }
 
-/** 「+」：新建通用 shell 会话（无 venv 激活）。 */
+/** 「+」：新建通用 shell 会话（无 venv 激活）。标题用自增 seq（关中间标签不重号）。 */
 async function newTab() {
   seq += 1;
-  const index = tabs.value.length + 1;
   await addSession(
     `shell:${seq}-${Date.now()}`,
     {},
-    `${t("terminal.tabTitle")} ${index}`,
+    `${t("terminal.tabTitle")} ${seq}`,
   );
 }
 
@@ -81,6 +82,26 @@ async function closeTab(tab: TabDef) {
   if (tabs.value.length === 0) {
     emit("emptied");
   }
+}
+
+/** 销毁全部标签会话（设置页「会话随页面走」——离开页面时由宿主调用）。 */
+async function disposeAllTabs() {
+  const current = [...tabs.value];
+  tabs.value = [];
+  activeKey.value = null;
+  for (const tab of current) {
+    if (tab.attachId) {
+      await disposeById(tab.attachId);
+    } else {
+      await disposeSession(tab.key);
+    }
+  }
+}
+
+/** 仅清空标签不销毁会话（拖出后所有权移交子窗，防宿主离开时误杀）。 */
+function releaseAllTabs() {
+  tabs.value = [];
+  activeKey.value = null;
 }
 
 /** 拖出用：全部标签的会话 id 与标题（attachOnly 直取；创建型查登记表，
@@ -113,7 +134,7 @@ onMounted(() => {
   });
 });
 
-defineExpose({ addSession, newTab, sessionsPayload, activeKey });
+defineExpose({ addSession, newTab, disposeAllTabs, releaseAllTabs, sessionsPayload, isEmpty, activeKey });
 </script>
 
 <template>

@@ -16,6 +16,7 @@ import { useAppearance } from "@/composables/useAppearance";
 import { useTerminalSessions } from "@/components/terminal/useTerminalSessions";
 import { applyTheme } from "@/components/terminal/terminalTheme";
 import { loadXterm } from "@/components/terminal/xtermLoader";
+import { formatAppError } from "@/utils/error";
 
 const props = defineProps<{
   /** 业务会话键（同键幂等复用；attachOnly 存在时忽略） */
@@ -33,7 +34,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const { appearance } = useAppearance();
-const { ensureSession, markExited, disposeSession } = useTerminalSessions();
+const { ensureSession, markExited, reapSession, scheduleExitCleanup, disposeSession } =
+  useTerminalSessions();
 
 const host = ref<HTMLDivElement | null>(null);
 const loadError = ref<string | null>(null);
@@ -51,6 +53,8 @@ let resizeObserver: ResizeObserver | null = null;
 let fitTimer: number | undefined;
 let lastCols = 0;
 let lastRows = 0;
+/** boot 未完成即 unmount（视图早夭）——创建出的会话无人附着，延迟回收 */
+let bootCancelled = false;
 
 function scheme(): ColorScheme {
   return appearance.value?.resolved ?? "light";
@@ -62,7 +66,10 @@ function onEvent(event: TerminalEvent) {
   } else if (event.kind === "exit") {
     exited.value = true;
     exitCode.value = event.exitCode ?? null;
-    if (sessionId) markExited(sessionId, exitCode.value);
+    if (sessionId) {
+      // markExited 内部调度 Exit 后 10s 自动回收（退出的 shell 不常驻 conhost）
+      markExited(sessionId, exitCode.value);
+    }
     emit("exited", exitCode.value);
   }
 }
@@ -92,6 +99,8 @@ function teardownTerm() {
   if (sessionId && attachId) {
     void terminalDetach(sessionId, attachId).catch(() => {});
   }
+  // boot 未完成即卸载（视图早夭）：让在途 boot 在 ensureSession 后走回收分支
+  if (!attachId) bootCancelled = true;
   attachId = null;
   dataDisposable?.dispose();
   dataDisposable = null;
@@ -102,6 +111,7 @@ function teardownTerm() {
 
 async function boot() {
   if (!host.value) return;
+  bootCancelled = false;
   loadError.value = null;
   exited.value = false;
   exitCode.value = null;
@@ -123,11 +133,19 @@ async function boot() {
     applyTheme(terminal, scheme());
 
     const id = props.attachOnly ?? (await ensureSession(props.sessionKey, () => props.config ?? {}));
+    if (bootCancelled) {
+      // 视图已卸载且无人附着——延迟回收防孤儿（同键复用者会先 dispose）
+      scheduleExitCleanup(id, 5_000);
+      sessionId = id;
+      teardownTerm();
+      return;
+    }
     sessionId = id;
     const ch = new Channel<TerminalEvent>();
     ch.onmessage = onEvent;
     attachId = await terminalAttach(id, ch);
     dataDisposable = terminal.onData((data) => {
+      if (exited.value || sessionClosed.value) return; // 终态短路（防 write 失败刷警告）
       void terminalWrite(id, data).catch((err) => console.warn("[terminal] write failed:", err));
     });
     emit("session", id);
@@ -136,11 +154,12 @@ async function boot() {
   } catch (err) {
     const code = (err as { code?: string })?.code;
     if (code === "terminal.not_found") {
-      // 会话已被销毁（如拖出窗口后关闭）——覆盖层展示；restart 清登记表后重建
+      // 会话已被销毁（如拖出窗口后关闭）——清死键后覆盖层展示，restart 重建
+      if (sessionId) reapSession(sessionId);
       sessionClosed.value = true;
     } else {
       console.error("[terminal] boot failed:", err);
-      loadError.value = String(err);
+      loadError.value = formatAppError(err, (key) => t(key));
     }
   }
 }

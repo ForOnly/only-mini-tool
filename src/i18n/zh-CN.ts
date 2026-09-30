@@ -216,6 +216,7 @@ export default {
     collapse: "收起终端",
     sessionClosed: "会话已关闭",
     windowTitle: "终端 — {name}",
+    popOutNotReady: "终端会话尚未就绪，稍后再试",
   },
   errors: {
     unknown: "未知错误",
@@ -237,6 +238,7 @@ export default {
       spawn_failed: "终端启动失败（未找到可用 Shell？）",
       not_found: "终端会话不存在（可能已关闭）",
       io_failed: "终端读写失败（会话可能已退出）",
+      limit_reached: "终端会话数已达上限，请先关闭部分会话",
     },
     not_found: "未找到资源",
     validation_error: "参数无效",

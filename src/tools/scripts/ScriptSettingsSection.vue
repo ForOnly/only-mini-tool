@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { open } from "@tauri-apps/plugin-dialog";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
@@ -174,11 +174,14 @@ async function openVenvTerminal(v: ScriptVenvSummary) {
   );
 }
 
-/** 整组拖出为独立终端窗口：所有权移交子窗（关窗销毁），本地折叠（会话经
- *  双附着继续同步；窗口关闭后展开区收敛到退出态） */
+/** 整组拖出为独立终端窗口：所有权移交子窗（非 main attach 即归属，关窗销毁），
+ *  本地清标签并折叠（防本页离开时误杀已移交会话）。未就绪标签给出提示。 */
 async function popOutTerminals() {
   const payload = terminalTabs.value?.sessionsPayload();
-  if (!payload || payload.ids.length === 0) return;
+  if (!payload || payload.ids.length === 0) {
+    error(t("terminal.popOutNotReady"));
+    return;
+  }
   const label = `terminal-${payload.ids[0].slice(0, 8)}-${payload.ids.length}`;
   await openChildWindow({
     kind: "terminal",
@@ -189,11 +192,17 @@ async function popOutTerminals() {
       titles: payload.titles.join(","),
     },
   });
+  terminalTabs.value?.releaseAllTabs();
   terminalExpanded.value = false;
 }
 
 onMounted(() => {
   void load().catch(report);
+});
+
+/** 会话随页面走：离开设置页销毁全部标签会话（收起是 v-show 不触发本钩子） */
+onBeforeUnmount(() => {
+  void terminalTabs.value?.disposeAllTabs();
 });
 </script>
 

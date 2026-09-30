@@ -24,38 +24,84 @@ pub use crate::services::terminal::session::{SessionSpawn, TerminalSession};
 /// 全局会话上限（防失控；超限提示用户关闭旧会话）。
 const MAX_SESSIONS: usize = 16;
 
+/// 登记表条目：会话 + 归属窗口 label（创建窗口；被非 main 窗口 attach 后移交）。
+struct OwnedSession {
+    session: Arc<TerminalSession>,
+    owner: String,
+}
+
+#[derive(Default)]
+struct RegistryState {
+    map: HashMap<String, OwnedSession>,
+    /// spawn 进行中的预留计数（与 map 合计参与上限判定，防并发超限）。
+    reserved: usize,
+}
+
+/// 上限预留（单锁临界区内原子 check+reserve；独立纯函数便于单测）。
+fn try_reserve(state: &mut RegistryState) -> Result<(), AppError> {
+    if state.map.len() + state.reserved >= MAX_SESSIONS {
+        return Err(AppError::TerminalLimitReached {
+            message: format!(
+                "terminal session limit reached ({MAX_SESSIONS}) — close old sessions first"
+            ),
+        });
+    }
+    state.reserved += 1;
+    Ok(())
+}
+
 pub struct TerminalRegistry {
-    sessions: Mutex<HashMap<String, Arc<TerminalSession>>>,
+    state: Mutex<RegistryState>,
 }
 
 impl TerminalRegistry {
     pub fn global() -> &'static TerminalRegistry {
         static REGISTRY: OnceLock<TerminalRegistry> = OnceLock::new();
         REGISTRY.get_or_init(|| TerminalRegistry {
-            sessions: Mutex::new(HashMap::new()),
+            state: Mutex::new(RegistryState::default()),
         })
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<TerminalSession>>> {
-        self.sessions.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, RegistryState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// 创建会话：探测 shell → 解析 cwd/venv → env 组装 → PTY spawn → 注册。
+    /// `owner` = 创建窗口 label（子窗 attach 后经 attach_owner 移交）。
     pub fn create(
         &self,
         app: &AppHandle,
         db: &Database,
         payload: TerminalCreatePayload,
+        owner: &str,
     ) -> Result<TerminalInfo, AppError> {
-        {
-            let sessions = self.lock();
-            if sessions.len() >= MAX_SESSIONS {
-                return Err(AppError::ValidationError {
-                    message: format!("terminal session limit reached ({MAX_SESSIONS})"),
-                });
-            }
-        }
+        try_reserve(&mut self.lock())?;
 
+        let spawned = self.spawn_session(app, db, &payload);
+        let mut state = self.lock();
+        state.reserved = state.reserved.saturating_sub(1);
+        match spawned {
+            Ok(session) => {
+                let info = session.snapshot();
+                state.map.insert(
+                    session.id.clone(),
+                    OwnedSession {
+                        session,
+                        owner: owner.to_string(),
+                    },
+                );
+                Ok(info)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn spawn_session(
+        &self,
+        app: &AppHandle,
+        db: &Database,
+        payload: &TerminalCreatePayload,
+    ) -> Result<Arc<TerminalSession>, AppError> {
         let kind = payload
             .shell
             .as_deref()
@@ -90,7 +136,7 @@ impl TerminalRegistry {
             cmds
         };
 
-        let session = TerminalSession::spawn(SessionSpawn {
+        TerminalSession::spawn(SessionSpawn {
             program: spawn_cfg.program,
             args: spawn_cfg.args,
             cwd,
@@ -101,32 +147,66 @@ impl TerminalRegistry {
             venv_label: venv_ref.map(str::to_string),
             title: payload.title.clone(),
             init_commands,
-        })?;
-
-        let info = session.snapshot();
-        self.lock().insert(session.id.clone(), session);
-        Ok(info)
+        })
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<TerminalSession>> {
-        self.lock().get(id).cloned()
+        self.lock().map.get(id).map(|o| Arc::clone(&o.session))
+    }
+
+    /// 归属移交：非 main 窗口 attach 即取得所有权（main 的双附着不夺回——
+    /// 弹出子窗才是归属方；关窗 = Destroyed → dispose_owned_by）。
+    pub fn attach_owner(&self, id: &str, caller: &str) {
+        if caller == "main" {
+            return;
+        }
+        if let Some(owned) = self.lock().map.get_mut(id) {
+            owned.owner = caller.to_string();
+        }
     }
 
     pub fn remove(&self, id: &str) {
-        self.lock().remove(id);
+        self.lock().map.remove(id);
     }
 
     pub fn list(&self) -> Vec<TerminalInfo> {
-        self.lock().values().map(|s| s.snapshot()).collect()
+        self.lock()
+            .map
+            .values()
+            .map(|o| o.session.snapshot())
+            .collect()
+    }
+
+    /// 销毁某窗口名下全部会话（窗口 Destroyed 时调用——覆盖子窗正常关闭与
+    /// webview 异常消亡）。返回销毁数（供 tracing）。
+    pub fn dispose_owned_by(&self, label: &str) -> usize {
+        let mut state = self.lock();
+        let ids: Vec<String> = state
+            .map
+            .iter()
+            .filter(|(_, owned)| owned.owner == label)
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &ids {
+            if let Some(owned) = state.map.remove(id) {
+                owned.session.dispose();
+            }
+        }
+        ids.len()
     }
 
     /// app 退出清理：杀全部会话进程树（PTY 随进程树终结关闭）。
     pub fn dispose_all(&self) {
-        let sessions: Vec<Arc<TerminalSession>> = self.lock().values().cloned().collect();
+        let sessions: Vec<Arc<TerminalSession>> = self
+            .lock()
+            .map
+            .values()
+            .map(|o| Arc::clone(&o.session))
+            .collect();
         for session in sessions {
             session.dispose();
         }
-        self.lock().clear();
+        self.lock().map.clear();
     }
 }
 
@@ -182,4 +262,46 @@ fn venv_python_exists(venv_root: &std::path::Path) -> bool {
         venv_root.join("bin").join("python")
     };
     candidate.is_file()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reserve_enforces_limit_atomically() {
+        let mut state = RegistryState::default();
+        for _ in 0..MAX_SESSIONS {
+            try_reserve(&mut state).expect("reserve within limit");
+        }
+        assert!(try_reserve(&mut state).is_err(), "over limit rejected");
+        // 释放一个预留后可再预留
+        state.reserved -= 1;
+        assert!(try_reserve(&mut state).is_ok());
+        // 登记数同样计入上限
+        state.reserved = 0;
+        for _ in 0..MAX_SESSIONS {
+            let session = TerminalSession::spawn(SessionSpawn {
+                program: if cfg!(windows) { "cmd.exe".into() } else { "/bin/sh".into() },
+                args: vec![],
+                cwd: std::env::temp_dir(),
+                env_overlay: Default::default(),
+                cols: 20,
+                rows: 5,
+                shell_label: "test".into(),
+                venv_label: None,
+                title: None,
+                init_commands: vec![],
+            })
+            .expect("spawn test session");
+            state.map.insert(
+                session.id.clone(),
+                OwnedSession {
+                    session,
+                    owner: "test".into(),
+                },
+            );
+        }
+        assert!(try_reserve(&mut state).is_err(), "map count also enforces limit");
+    }
 }

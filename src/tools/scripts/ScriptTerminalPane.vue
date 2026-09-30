@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /** 编辑页「终端」标签内容：按脚本解析 cwd + venv（复用 run 解析链），
  *  自动激活后交给通用 TerminalView。
- *  会话归属（D3）：sessionKey = `script:<id>`——挂载期间切脚本销毁旧会话，
- *  同脚本往返列表不销毁（重进回放）；显式关闭进入占位态。 */
+ *  会话键含环境指纹 `script:<id>:<venv|global>:<cwd>`——挂载期间切脚本或
+ *  改 venv 绑定（保存后）即销毁旧会话重建；同环境往返列表不销毁（重进回放）。 */
 
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import TerminalView from "@/components/terminal/TerminalView.vue";
-import { resolveScriptTerminal } from "@/api/terminal";
+import { resolveScriptTerminal, terminalList } from "@/api/terminal";
 import type { TerminalCreatePayload } from "@/api/types";
 import { useTerminalSessions } from "@/components/terminal/useTerminalSessions";
 import { openChildWindow } from "@/platform/childWindow";
@@ -18,34 +18,35 @@ import { formatAppError } from "@/utils/error";
 
 const props = defineProps<{
   scriptId: number;
+  /** 已保存的脚本 venv 绑定（变化 = 保存了新绑定 → 终端换环境） */
+  venvBinding: string;
 }>();
 
 const { t } = useI18n();
 const { error } = useMessage();
-const { disposeSession, getSession } = useTerminalSessions();
+const { disposeSession, getSession, reapSession } = useTerminalSessions();
 
 const config = ref<TerminalCreatePayload | null>(null);
 const venvName = ref<string | null>(null);
+/** 当前生效会话键（含环境指纹；加载完成后才有效） */
+const loadedKey = ref<string | null>(null);
 /** 关闭/重建换 key（TerminalView 仅在挂载时 boot，不 watch sessionKey） */
 const epoch = ref(0);
 const sessionClosed = ref(false);
 let loadSeq = 0;
 
-function sessionKey(id: number): string {
-  return `script:${id}`;
-}
-
 async function load(id: number) {
   const seq = ++loadSeq;
   try {
     const conf = await resolveScriptTerminal(id);
-    if (seq !== loadSeq) return; // 期间又切了脚本
+    if (seq !== loadSeq) return; // 期间环境又变了
     venvName.value = conf.venvName ?? null;
     config.value = {
       cwd: conf.cwd,
       venv: conf.venvName ?? undefined,
       title: `script:${id}`,
     };
+    loadedKey.value = `script:${id}:${conf.venvName ?? "global"}:${conf.cwd}`;
     sessionClosed.value = false;
   } catch (err) {
     if (seq !== loadSeq) return;
@@ -54,17 +55,17 @@ async function load(id: number) {
 }
 
 watch(
-  () => props.scriptId,
-  (id, old) => {
-    // 挂载期间切换脚本：销毁前一脚本会话（unmount 不销毁——往返列表保留回放）
-    if (old != null) void disposeSession(sessionKey(old));
-    void load(id);
+  [() => props.scriptId, () => props.venvBinding],
+  () => {
+    // 挂载期间切脚本/换绑定：销毁旧环境会话（unmount 不销毁——往返列表保留回放）
+    if (loadedKey.value) void disposeSession(loadedKey.value);
+    void load(props.scriptId);
   },
   { immediate: true },
 );
 
 async function closeSession() {
-  await disposeSession(sessionKey(props.scriptId));
+  if (loadedKey.value) await disposeSession(loadedKey.value);
   sessionClosed.value = true;
 }
 
@@ -73,11 +74,24 @@ function reopen() {
   epoch.value += 1;
 }
 
-/** 弹出为独立终端窗口：会话所有权移交子窗（关窗即销毁）；
- *  dock 侧保留双附着实时同步，窗口关闭后经 Exit/not_found 收敛到占位态。 */
+/** 弹出为独立终端窗口：开窗前探活（跨窗 dispose 后主窗登记表可能是死键）；
+ *  会话所有权移交子窗（关窗即销毁），dock 侧保留双附着实时同步。 */
 async function popOut() {
-  const state = getSession(sessionKey(props.scriptId));
+  const key = loadedKey.value;
+  const state = key ? getSession(key) : null;
   if (!state) return;
+  try {
+    const alive = (await terminalList()).some((s) => s.id === state.id);
+    if (!alive) {
+      reapSession(state.id);
+      sessionClosed.value = true;
+      error(t("errors.terminal.not_found"));
+      return;
+    }
+  } catch (err) {
+    error(formatAppError(err, (k) => t(k)));
+    return;
+  }
   const name = venvName.value ?? t("terminal.tabTitle");
   await openChildWindow({
     kind: "terminal",
@@ -98,7 +112,7 @@ async function popOut() {
         <AppButton
           variant="ghost"
           type="button"
-          :disabled="sessionClosed || !getSession(sessionKey(scriptId))"
+          :disabled="sessionClosed || !loadedKey || !getSession(loadedKey)"
           @click="popOut"
         >
           {{ t("terminal.popOut") }}
@@ -109,7 +123,7 @@ async function popOut() {
       </div>
     </header>
     <div class="pane-body">
-      <div v-if="sessionClosed || !config" class="closed">
+      <div v-if="sessionClosed || !config || !loadedKey" class="closed">
         <span>{{
           sessionClosed ? t("terminal.sessionClosed") : t("terminal.loading")
         }}</span>
@@ -119,8 +133,8 @@ async function popOut() {
       </div>
       <TerminalView
         v-else
-        :key="`${sessionKey(scriptId)}-${epoch}`"
-        :session-key="sessionKey(scriptId)"
+        :key="`${loadedKey}-${epoch}`"
+        :session-key="loadedKey"
         :config="config"
       />
     </div>

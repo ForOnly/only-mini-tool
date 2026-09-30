@@ -221,6 +221,7 @@ export default {
     collapse: "Collapse terminal",
     sessionClosed: "Session closed",
     windowTitle: "Terminal — {name}",
+    popOutNotReady: "Terminal sessions are not ready yet — try again shortly",
   },
   errors: {
     unknown: "Unknown error",
@@ -242,6 +243,7 @@ export default {
       spawn_failed: "Terminal failed to start (no usable shell?)",
       not_found: "Terminal session not found (it may have been closed)",
       io_failed: "Terminal I/O failed (session may have exited)",
+      limit_reached: "Terminal session limit reached — close old sessions first",
     },
     not_found: "Not found",
     validation_error: "Invalid input",

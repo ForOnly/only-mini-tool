@@ -24,6 +24,7 @@ const { refresh: refreshAppearance } = useAppearance();
 const tabs = ref<InstanceType<typeof TerminalTabs> | null>(null);
 let unlistenClose: (() => void) | null = null;
 let themeTimer: number | undefined;
+let emptyTimer: number | undefined;
 
 const title = computed(() => {
   const first = props.titles?.[0];
@@ -49,12 +50,17 @@ onMounted(async () => {
 onUnmounted(() => {
   unlistenClose?.();
   if (themeTimer != undefined) window.clearInterval(themeTimer);
+  if (emptyTimer != undefined) window.clearTimeout(emptyTimer);
 });
 
-/** 全部标签关闭 → 自动关窗（destroy 不触发 close-requested，无重入） */
+/** 全部标签关闭 → 自动关窗（destroy 不触发 close-requested，无重入）。
+ *  延迟窗内复查：用户点「+」新建了标签则不关（否则新会话漏 dispose）。 */
 function onEmptied() {
-  window.setTimeout(() => {
-    void getCurrentWindow().destroy();
+  if (emptyTimer != undefined) window.clearTimeout(emptyTimer);
+  emptyTimer = window.setTimeout(() => {
+    if (tabs.value?.isEmpty) {
+      void getCurrentWindow().destroy();
+    }
   }, 300);
 }
 </script>
