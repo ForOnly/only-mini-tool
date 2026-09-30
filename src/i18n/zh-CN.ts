@@ -187,8 +187,9 @@ export default {
     venvDeleteMessage: "将删除「{name}」的完整目录，不可恢复。",
     venvBind: "虚拟环境",
     venvFollowGlobal: "跟随全局",
-    venvBindHint: "绑定后优先于全局启用与 workspace .venv",
-    venvHint: "运行链：脚本绑定 > 全局启用 > 生效 workspace 下 .venv > 全局 Python；指向不存在时静默回落",
+    venvBindHint: "绑定后优先于全局启用与 workspace .venv；可选 .venv 强制用默认工作空间",
+    venvHint:
+      "运行链：脚本绑定 > 全局启用 > 生效 workspace 下 .venv > 全局 Python。格式化：默认 workspace .venv > 全局 Python（不受「设为默认」影响）。指向不存在时静默回落",
     paramDefault: "默认值",
     runTimer: "已运行 {secs}s",
     commandLabel: "命令",

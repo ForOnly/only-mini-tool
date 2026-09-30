@@ -9,7 +9,7 @@ pub mod runner;
 pub mod validate;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -64,19 +64,15 @@ impl ScriptsService {
         payload.name = validate::validate_name(&payload.name)?;
         payload.description = payload.description.trim().to_string();
         validate::validate_params_schema(&payload.params_schema)?;
-        // venv 绑定：非空须名称合法且 venv 存在（防拼写错误静默回落）
+        // venv 绑定：非空须存在（`.venv` = 默认 workspace；命名 = venvs/<name>）
         if let Some(venv) = payload
             .venv_name
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            let name = validate::validate_venv_name(venv)?;
-            if named_venv_python(app, &name).await.is_none() {
-                return Err(AppError::ValidationError {
-                    message: format!("venv not found: {name}"),
-                });
-            }
+            let name = normalize_venv_ref(venv)?;
+            require_venv_root(app, db, &name).await?;
             payload.venv_name = Some(name);
         }
         db.with_conn(|conn| ScriptsRepo::update(conn, id, &payload))
@@ -157,22 +153,26 @@ impl ScriptsService {
     }
 
     /// black 格式化脚本代码（`python -m black --quiet -`，stdin 进 stdout 出）。
-    /// 轻量 spawn（同 probe_python 模式，不占 runner 单飞）；解释器按全局子链解析
-    /// （全局启用 venv > workspace `.venv` > 全局 python——不查脚本，draft 未保存也正确）。
+    /// 轻量 spawn（同 probe_python 模式，不占 runner 单飞）；解释器链与 Run 刻意不对称：
+    /// **默认 workspace `.venv` > 全局 python**（不读脚本绑定、不读「设为默认」命名 venv）。
+    /// 全链路 tracing（`[scripts.format]` 前缀，设置页日志面板可 grep 诊断）。
     pub async fn format_code(
         app: &AppHandle,
         db: &Database,
         code: &str,
     ) -> Result<String, AppError> {
+        let started = std::time::Instant::now();
         let settings = Self::get_settings(db)?;
-        let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
-        let global_venv = settings.venv.trim();
-        let venv_python = if !global_venv.is_empty() {
-            named_venv_python(app, global_venv)
-                .await
-                .or(venv_python_at(&fallback_dir).await)
+        let ws = settings.default_workspace.trim();
+        let venv_python = if !ws.is_empty() {
+            venv_python_at(Path::new(ws)).await
         } else {
-            venv_python_at(&fallback_dir).await
+            None
+        };
+        let chain_source = if venv_python.is_some() {
+            "workspace .venv"
+        } else {
+            "global python"
         };
         let interpreter =
             prepare::resolve_interpreter(venv_python.as_deref(), &settings.python_path);
@@ -181,9 +181,18 @@ impl ScriptsService {
                 message: "python interpreter path is empty".into(),
             });
         }
+        tracing::info!(
+            "[scripts.format] interpreter={} (chain: {}) code_bytes={}",
+            interpreter,
+            chain_source,
+            code.len()
+        );
 
+        // cwd 固定 venvs 目录：防 mise/pyenv shim 按进程目录解析（无 cwd 继承 app 目录）
+        let spawn_dir = venvs_dir(app)?;
         let mut child = tokio::process::Command::new(&interpreter)
             .args(["-m", "black", "--quiet", "-"])
+            .current_dir(&spawn_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -191,61 +200,93 @@ impl ScriptsService {
             .map_err(|e| AppError::InternalError {
                 message: format!("start python for black ({interpreter}): {e}"),
             })?;
-        // 写 stdin 后 wait_with_output（10s 超时兜底）
+        // 写 stdin 后 wait_with_output（30s 超时兜底——spawn + black import 冷启动余量）
         {
             use tokio::io::AsyncWriteExt;
             if let Some(mut stdin) = child.stdin.take() {
                 let _ = stdin.write_all(code.as_bytes()).await;
             } // stdin drop → EOF，black 输出结果
         }
-        let waited = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output()).await;
+        let waited = tokio::time::timeout(Duration::from_secs(30), child.wait_with_output()).await;
         let out = match waited {
             Ok(Ok(out)) => out,
             Ok(Err(e)) => {
+                tracing::warn!("[scripts.format] wait failed: {e}");
                 return Err(AppError::InternalError {
                     message: format!("wait black: {e}"),
                 });
             }
             Err(_) => {
+                tracing::warn!("[scripts.format] timed out after 30s");
                 return Err(AppError::ValidationError {
-                    message: "black formatting timed out (10s)".into(),
+                    message: "black formatting timed out (30s)".into(),
                 });
             }
         };
 
         if out.status.success() {
-            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+            let formatted = String::from_utf8_lossy(&out.stdout).into_owned();
+            tracing::info!(
+                "[scripts.format] ok: out_bytes={} changed={} elapsed={}ms",
+                formatted.len(),
+                formatted.len() != code.len(),
+                started.elapsed().as_millis()
+            );
+            Ok(formatted)
         } else {
             let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-            let missing = stderr.contains("No module named black");
+            let trimmed = stderr.trim();
+            let kind = classify_black_failure(trimmed);
+            // 末尾 200 字符（双 reverse 保序，避免直接 rev().take 倒序）
+            let stderr_tail: String = trimmed
+                .chars()
+                .rev()
+                .take(200)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            tracing::warn!(
+                "[scripts.format] failed: exit={:?} kind={} stderr_tail={:?}",
+                out.status.code(),
+                kind,
+                stderr_tail
+            );
             Err(AppError::ValidationError {
-                message: if missing {
-                    "black is not installed — install it into the active venv \
-                     (venv row → Install deps → black)"
-                        .into()
-                } else {
-                    format!(
-                        "black failed (exit {:?}): {}",
+                message: match kind {
+                    "missing" => format!(
+                        "black is not installed for {interpreter} — install it into the \
+                         default workspace .venv (settings → venv row （workspace） → \
+                         Install deps → black), or create that .venv first"
+                    ),
+                    "broken" => format!(
+                        "black is broken or shadowed for {interpreter} — reinstall into that \
+                         environment (Install deps → black, or pip install --force-reinstall black)"
+                    ),
+                    _ => format!(
+                        "black failed for {interpreter} (exit {:?}): {}",
                         out.status.code(),
-                        stderr.trim()
-                    )
+                        trimmed
+                    ),
                 },
             })
         }
     }
 
-    /// 向指定命名 venv 安装依赖（`python -m pip install`，复用执行内核）。
+    /// 向指定 venv 安装依赖（`python -m pip install`，复用执行内核）。
+    /// `name == ".venv"` → 默认 workspace；否则托管 `venvs/<name>/`。
     /// interpreter 为 venv python 绝对路径——天然不受 mise/pyenv shim 目录敏感影响。
     /// 不提供取消（pip 中途被杀留半装环境）；超时 600s 由 runner 杀树兜底、重跑幂等修复。
     pub async fn install_venv_packages(
         app: &AppHandle,
+        db: &Database,
         name: &str,
         packages: Vec<String>,
         requirements: Option<String>,
     ) -> Result<ScriptRunResult, AppError> {
-        let name = validate::validate_venv_name(name)?;
-        let root = venvs_dir(app)?;
-        let Some(venv_python) = python_exists(&root.join(&name)).await else {
+        let name = normalize_venv_ref(name)?;
+        let root = require_venv_root(app, db, &name).await?;
+        let Some(venv_python) = python_exists(&root).await else {
             return Err(AppError::ValidationError {
                 message: format!("venv not found: {name}"),
             });
@@ -304,6 +345,15 @@ impl ScriptsService {
         let mut env: HashMap<String, String> = std::env::vars().collect();
         prepare::ensure_stdio_utf8(&mut env);
 
+        // 等效命令 = venv python + 完整 pip 参数（手工拼，不经 display_command）
+        let command = format!("{} {}", venv_python, args.join(" "));
+        let install_started = std::time::Instant::now();
+        tracing::info!(
+            "[scripts.venv] pip install start: python={} command={}",
+            venv_python,
+            command
+        );
+
         let outcome = runner::spawn_and_stream(
             SpawnOptions {
                 interpreter: venv_python.to_string(),
@@ -318,8 +368,14 @@ impl ScriptsService {
         )
         .await?;
 
-        // 等效命令 = venv python + 完整 pip 参数（手工拼，不经 display_command）
-        let command = format!("{} {}", venv_python, args.join(" "));
+        tracing::info!(
+            "[scripts.venv] pip install finished: exit={:?} cancelled={} stdout_bytes={} stderr_bytes={} elapsed={}ms",
+            outcome.exit_code,
+            outcome.cancelled,
+            outcome.stdout.len(),
+            outcome.stderr.len(),
+            install_started.elapsed().as_millis()
+        );
         Ok(ScriptRunResult {
             exit_code: outcome.exit_code,
             stdout: outcome.stdout,
@@ -330,16 +386,15 @@ impl ScriptsService {
     }
 
     /// 在新终端窗口打开并激活指定 venv（逃生舱：完整 pip/交互操作）。
+    /// `name == ".venv"` → 默认 workspace；否则托管命名 venv。
     /// 只开窗口不执行任务，不走 runner/单飞。
-    pub async fn open_venv_terminal(app: &AppHandle, name: &str) -> Result<(), AppError> {
-        let name = validate::validate_venv_name(name)?;
-        let root = venvs_dir(app)?;
-        let venv = root.join(&name);
-        if python_exists(&venv).await.is_none() {
-            return Err(AppError::ValidationError {
-                message: format!("venv not found: {name}"),
-            });
-        }
+    pub async fn open_venv_terminal(
+        app: &AppHandle,
+        db: &Database,
+        name: &str,
+    ) -> Result<(), AppError> {
+        let name = normalize_venv_ref(name)?;
+        let venv = require_venv_root(app, db, &name).await?;
         #[cfg(windows)]
         {
             const CREATE_NEW_CONSOLE: u32 = 0x0010_0000;
@@ -425,6 +480,12 @@ impl ScriptsService {
         dir: &Path,
         token: CancellationToken,
     ) -> Result<(), AppError> {
+        let venv_started = std::time::Instant::now();
+        tracing::info!(
+            "[scripts.venv] create start: dir={} python={}",
+            dir.display(),
+            settings.python_path.trim()
+        );
         let mut env: HashMap<String, String> = std::env::vars().collect();
         for (k, v) in &settings.env {
             env.insert(k.clone(), v.clone());
@@ -459,7 +520,14 @@ impl ScriptsService {
         )
         .await
         {
-            Ok(outcome) if outcome.exit_code == Some(0) => Ok(()),
+            Ok(outcome) if outcome.exit_code == Some(0) => {
+                tracing::info!(
+                    "[scripts.venv] create ok: dir={} elapsed={}ms",
+                    dir.display(),
+                    venv_started.elapsed().as_millis()
+                );
+                Ok(())
+            }
             Ok(outcome) => {
                 // exit 9009 = Windows「找不到命令」；空输出非零退出多为 shim（mise/pyenv）
                 // 在当前目录解析失败——两种情况 python 都没真正跑起来
@@ -473,6 +541,15 @@ impl ScriptsService {
                 } else {
                     ""
                 };
+                tracing::warn!(
+                    "[scripts.venv] create failed: dir={} exit={:?} unusable={} stderr_bytes={} stdout_bytes={} elapsed={}ms",
+                    dir.display(),
+                    outcome.exit_code,
+                    unusable,
+                    outcome.stderr.len(),
+                    outcome.stdout.len(),
+                    venv_started.elapsed().as_millis()
+                );
                 Err(AppError::InternalError {
                     message: format!(
                         "python -m venv failed (exit {:?}): {}{hint}",
@@ -481,16 +558,28 @@ impl ScriptsService {
                     ),
                 })
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                tracing::warn!(
+                    "[scripts.venv] create error: dir={} err={} elapsed={}ms",
+                    dir.display(),
+                    e,
+                    venv_started.elapsed().as_millis()
+                );
+                Err(e)
+            }
         };
 
         if let Err(err) = &result {
             // 失败清理半成品目录：python -m venv 在残留目录上必然再失败（该名称将永久失败）
-            tracing::warn!(dir = %dir.display(), error = %err, "venv creation failed, cleaning partial dir");
+            tracing::warn!(
+                "[scripts.venv] create cleanup: dir={} error={}",
+                dir.display(),
+                err
+            );
             if let Err(clean_err) = tokio::fs::remove_dir_all(dir).await {
                 // NotFound = 目录本就不存在（如 spawn 未成功）——无残留，静默
                 if clean_err.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("venv partial dir cleanup failed: {clean_err}");
+                    tracing::warn!("[scripts.venv] create cleanup failed: {clean_err}");
                 }
             }
         }
@@ -662,7 +751,7 @@ impl ScriptsService {
             .map_err(|e| AppError::InternalError {
                 message: format!("create workspace cwd: {e}"),
             })?;
-        // venv 候选（5 级链的 venv 部分）：脚本绑定 > 全局启用 > workspace .venv；
+        // venv 候选：脚本绑定 > 全局启用 > 生效 cwd 下 .venv；
         // 任一级指向的 venv 不存在则静默回落下级（解析容错）
         let bound_venv = script
             .venv_name
@@ -670,6 +759,14 @@ impl ScriptsService {
             .map(str::trim)
             .filter(|s| !s.is_empty());
         let venv_python = match bound_venv {
+            Some(".venv") => {
+                let ws = settings.default_workspace.trim();
+                if ws.is_empty() {
+                    None
+                } else {
+                    venv_python_at(Path::new(ws)).await
+                }
+            }
             Some(name) => named_venv_python(app, name).await,
             None => {
                 let global_venv = settings.venv.trim();
@@ -689,6 +786,18 @@ impl ScriptsService {
                 message: "python interpreter path is empty".into(),
             });
         }
+        let run_chain = match (bound_venv, venv_python.as_deref()) {
+            (Some(name), _) => format!("script venv \"{name}\""),
+            (None, Some(_)) => "global venv / workspace .venv".to_string(),
+            (None, None) => "global python".to_string(),
+        };
+        let run_started = std::time::Instant::now();
+        tracing::info!(
+            "[scripts.run] script=\"{}\" interpreter={} (chain: {})",
+            script.name,
+            interpreter,
+            run_chain
+        );
 
         let run_dir = scripts_run_dir(app)?;
         tokio::fs::create_dir_all(&run_dir)
@@ -712,6 +821,8 @@ impl ScriptsService {
             &projected.args,
         );
 
+        tracing::info!("[scripts.run] command: {command}");
+
         let outcome = runner::spawn_and_stream(
             SpawnOptions {
                 interpreter,
@@ -725,6 +836,15 @@ impl ScriptsService {
         )
         .await?;
 
+        tracing::info!(
+            "[scripts.run] finished: script=\"{}\" exit={:?} cancelled={} stdout_bytes={} stderr_bytes={} elapsed={}ms",
+            script.name,
+            outcome.exit_code,
+            outcome.cancelled,
+            outcome.stdout.len(),
+            outcome.stderr.len(),
+            run_started.elapsed().as_millis()
+        );
         Ok(ScriptRunResult {
             exit_code: outcome.exit_code,
             stdout: outcome.stdout,
@@ -738,6 +858,62 @@ impl ScriptsService {
 /// 探测 workspace 下 `.venv` 的解释器路径（存在才返回）。
 async fn venv_python_at(workspace: &Path) -> Option<String> {
     python_exists(&workspace.join(".venv")).await
+}
+
+/// 规范化 venv 引用：`".venv"` 保留；命名走白名单校验。
+fn normalize_venv_ref(name: &str) -> Result<String, AppError> {
+    let trimmed = name.trim();
+    if trimmed == ".venv" {
+        Ok(".venv".into())
+    } else {
+        validate::validate_venv_name(trimmed)
+    }
+}
+
+/// 解析 venv 根目录：`".venv"` = 默认 workspace 下；命名 = `{app_data}/venvs/<name>/`。
+/// 不存在或 workspace 未配置 → ValidationError。
+async fn require_venv_root(app: &AppHandle, db: &Database, name: &str) -> Result<PathBuf, AppError> {
+    if name == ".venv" {
+        let settings = ScriptsService::get_settings(db)?;
+        let ws = settings.default_workspace.trim();
+        if ws.is_empty() {
+            return Err(AppError::ValidationError {
+                message: "scripts.default_workspace is not configured".into(),
+            });
+        }
+        let dir = Path::new(ws).join(".venv");
+        if python_exists(&dir).await.is_none() {
+            return Err(AppError::ValidationError {
+                message: "venv not found: .venv (default workspace)".into(),
+            });
+        }
+        return Ok(dir);
+    }
+    let root = venvs_dir(app)?;
+    let dir = root.join(name);
+    if python_exists(&dir).await.is_none() {
+        return Err(AppError::ValidationError {
+            message: format!("venv not found: {name}"),
+        });
+    }
+    Ok(dir)
+}
+
+/// black 失败分类：missing（未装）/ broken（损坏或同名包遮蔽）/ other。
+fn classify_black_failure(stderr: &str) -> &'static str {
+    let broken = stderr.contains("black.__main__")
+        || stderr.contains("is a package and cannot be directly executed");
+    if broken {
+        return "broken";
+    }
+    // 真未装：带引号，或裸 `No module named black` 且非 __main__ 变体
+    let missing = stderr.contains("No module named 'black'")
+        || (stderr.contains("No module named black") && !stderr.contains("black.__main__"));
+    if missing {
+        "missing"
+    } else {
+        "other"
+    }
 }
 
 /// 探测 venv 根目录下的平台 python 可执行（存在才返回路径字符串）。
@@ -884,6 +1060,24 @@ mod tests {
         assert_eq!(parse_pyvenv_version("home = x\n").as_deref(), None);
         assert_eq!(parse_pyvenv_version("").as_deref(), None);
         // 实机 workspace .venv 的 cfg 顺带验证
+    }
+
+    #[test]
+    fn classify_black_failure_kinds() {
+        assert_eq!(
+            classify_black_failure("ModuleNotFoundError: No module named 'black'"),
+            "missing"
+        );
+        assert_eq!(
+            classify_black_failure(
+                "No module named black.__main__; 'black' is a package and cannot be directly executed"
+            ),
+            "broken"
+        );
+        assert_eq!(
+            classify_black_failure("SyntaxError: invalid syntax"),
+            "other"
+        );
     }
 
     #[tokio::test]

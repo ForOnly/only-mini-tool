@@ -192,9 +192,10 @@ export default {
     venvDeleteMessage: "This removes the full directory of \"{name}\" — irreversible.",
     venvBind: "Virtual environment",
     venvFollowGlobal: "Follow global",
-    venvBindHint: "Bound venv wins over global default and workspace .venv",
+    venvBindHint:
+      "Bound venv wins over global default and workspace .venv; pick .venv to force the default workspace env",
     venvHint:
-      "Run chain: script binding > global default > workspace .venv > global Python; missing targets fall through silently",
+      "Run: script binding > global default > workspace .venv > global Python. Format: default workspace .venv > global Python (ignores Set as default). Missing targets fall through silently",
     paramDefault: "Default",
     runTimer: "{secs}s elapsed",
     commandLabel: "Command",

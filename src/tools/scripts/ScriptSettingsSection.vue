@@ -300,21 +300,24 @@ onMounted(() => {
             <span class="venv-path">{{ v.pythonPath }}</span>
           </div>
           <div class="row venv-actions">
-            <template v-if="!v.workspace">
-              <AppButton variant="ghost" type="button" @click="toggleInstall(v.name)">
-                {{ t("scripts.venvInstall") }}
-              </AppButton>
-              <AppButton variant="ghost" type="button" @click="onOpenTerminal(v.name)">
-                {{ t("scripts.venvOpenTerminal") }}
-              </AppButton>
-              <AppButton variant="ghost" type="button" @click="onSetDefaultVenv(v.name)">
-                {{
-                  activeVenv === v.name
-                    ? t("scripts.venvDisableDefault")
-                    : t("scripts.venvSetDefault")
-                }}
-              </AppButton>
-            </template>
+            <AppButton variant="ghost" type="button" @click="toggleInstall(v.name)">
+              {{ t("scripts.venvInstall") }}
+            </AppButton>
+            <AppButton variant="ghost" type="button" @click="onOpenTerminal(v.name)">
+              {{ t("scripts.venvOpenTerminal") }}
+            </AppButton>
+            <AppButton
+              v-if="!v.workspace"
+              variant="ghost"
+              type="button"
+              @click="onSetDefaultVenv(v.name)"
+            >
+              {{
+                activeVenv === v.name
+                  ? t("scripts.venvDisableDefault")
+                  : t("scripts.venvSetDefault")
+              }}
+            </AppButton>
             <AppButton variant="ghost" type="button" @click="deleteVenvName = v.name">
               {{ t("scripts.venvDelete") }}
             </AppButton>
