@@ -3,8 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useI18n } from "vue-i18n";
 
 import AppConfirm from "@/components/common/AppConfirm.vue";
+import ScriptBottomPanel from "@/tools/scripts/ScriptBottomPanel.vue";
 import ScriptEditor from "@/tools/scripts/ScriptEditor.vue";
-import ScriptLogPanel from "@/tools/scripts/ScriptLogPanel.vue";
 import ScriptMetaPanel from "@/tools/scripts/ScriptMetaPanel.vue";
 import ScriptParamForm from "@/tools/scripts/ScriptParamForm.vue";
 import ScriptRunBar from "@/tools/scripts/ScriptRunBar.vue";
@@ -255,11 +255,12 @@ const statusText = computed(() => {
         />
       </section>
     </div>
-    <ScriptLogPanel
+    <ScriptBottomPanel
       :result="lastResult"
       :running="running"
       :status-text="statusText"
       :status-dirty="dirty"
+      :script-id="scriptIdNum(draft.id)"
     />
 
     <AppConfirm

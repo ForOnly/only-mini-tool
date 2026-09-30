@@ -214,6 +214,8 @@ export default {
     exitedNoCode: "Exited",
     restart: "New session",
     loadFailed: "Terminal failed to load",
+    loading: "Resolving environment…",
+    venvNone: "Global",
     open: "Terminal",
     popOut: "Pop out",
     expand: "Expand terminal",

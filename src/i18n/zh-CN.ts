@@ -209,6 +209,8 @@ export default {
     exitedNoCode: "已退出",
     restart: "新建会话",
     loadFailed: "终端加载失败",
+    loading: "解析运行环境…",
+    venvNone: "全局",
     open: "终端",
     popOut: "弹出窗口",
     expand: "展开终端",

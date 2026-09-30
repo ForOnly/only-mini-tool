@@ -1,53 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+/** 运行日志纯内容组件：命令行回显 + 输出区。
+ *  面板高度拖拽/标签头由 ScriptBottomPanel 承担（本组件不再自管布局外壳）。 */
+
+import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import { useMessage } from "@/composables/useMessage";
 import type { ScriptRunResult } from "@/api/types";
-import { usePanelResize } from "@/tools/scripts/usePanelResize";
 
 const props = defineProps<{
   result: ScriptRunResult | null;
   running: boolean;
-  /** 编辑页状态文字（未保存 · 计时器）——LogPanel 头部是唯一持久状态位 */
-  statusText?: string;
-  statusDirty?: boolean;
 }>();
 
 const { t } = useI18n();
 const { success } = useMessage();
-
-const STORAGE_KEY = "scripts.logPanelHeight";
-const MIN_HEIGHT = 96;
-const MAX_HEIGHT = 420;
-/** 编辑区（Monaco + RunBar）的最小保护高度——拖拽/窗口收缩均不可侵占 */
-const MIN_EDITOR_AREA = 200;
-const TITLEBAR_FALLBACK = 32;
-
-const rootEl = ref<HTMLElement | null>(null);
-
-function parentHeight(): number {
-  const parent = rootEl.value?.parentElement;
-  if (parent && parent.clientHeight > 0) return parent.clientHeight;
-  return Math.max(0, window.innerHeight - TITLEBAR_FALLBACK);
-}
-
-function getMin() {
-  return MIN_HEIGHT;
-}
-
-function getMax() {
-  return Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, parentHeight() - MIN_EDITOR_AREA));
-}
-
-const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelResize({
-  storageKey: STORAGE_KEY,
-  axis: "y",
-  getMin,
-  getMax,
-  defaultValue: () => 160,
-});
 
 const command = computed(() => props.result?.command ?? "");
 
@@ -80,32 +48,7 @@ async function copyCommand() {
 </script>
 
 <template>
-  <aside
-    ref="rootEl"
-    class="log-panel"
-    :style="{ height: `${height}px` }"
-  >
-    <div
-      class="handle"
-      :class="{ dragging, atMax }"
-      role="separator"
-      aria-orientation="horizontal"
-      tabindex="0"
-      :aria-label="t('scripts.logResize')"
-      :aria-valuenow="height"
-      :aria-valuemin="MIN_HEIGHT"
-      :aria-valuemax="MAX_HEIGHT"
-      @pointerdown="onPointerDown"
-      @keydown="onKeydown"
-    />
-    <header class="head">
-      <h3>{{ t("scripts.logTitle") }}</h3>
-      <span
-        v-if="statusText"
-        class="status"
-        :class="{ dirty: statusDirty }"
-      >{{ statusText }}</span>
-    </header>
+  <div class="log-body">
     <div v-if="command" class="command-row">
       <span class="command-label">{{ t("scripts.commandLabel") }}</span>
       <code class="command-text">{{ command }}</code>
@@ -114,67 +57,16 @@ async function copyCommand() {
       </AppButton>
     </div>
     <pre class="body" data-scrollbar="thin">{{ text }}</pre>
-  </aside>
+  </div>
 </template>
 
 <style scoped>
-.log-panel {
+.log-body {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
-  min-height: 96px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.handle {
-  height: 6px;
-  flex-shrink: 0;
-  cursor: ns-resize;
-  touch-action: none;
-  user-select: none;
-  outline: none;
-  background: color-mix(in srgb, var(--border) 70%, transparent);
-}
-
-.handle:hover,
-.handle:focus-visible,
-.handle.dragging {
-  background: color-mix(in srgb, var(--accent) 55%, transparent);
-}
-
-/* 已到可拖上限——与 hover 区分，提示「到顶」而非失灵 */
-.handle.atMax {
-  background: color-mix(in srgb, var(--accent) 70%, transparent);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-
-.head h3 {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-/* 定宽防计时器位数增长回流；dirty 警示色 */
-.status {
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  min-width: 5.5em;
-  text-align: right;
-}
-
-.status.dirty {
-  color: var(--warning, #c47f17);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .command-row {

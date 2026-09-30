@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { open } from "@tauri-apps/plugin-dialog";
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import AppConfirm from "@/components/common/AppConfirm.vue";
 import AppInput from "@/components/common/AppInput.vue";
+import TerminalTabs from "@/components/terminal/TerminalTabs.vue";
 import {
   createScriptVenv,
   createScriptsVenv,
@@ -39,6 +40,9 @@ const installPkgs = ref("");
 const installReq = ref("");
 const installing = ref(false);
 const installResult = ref<ScriptRunResult | null>(null);
+/** venv 终端展开区（v-show 保挂载——收起不销毁会话，重展开回放） */
+const terminalExpanded = ref(false);
+const terminalTabs = ref<InstanceType<typeof TerminalTabs> | null>(null);
 
 const envMap = computed(() => {
   const out: Record<string, string> = {};
@@ -204,6 +208,19 @@ async function onInstall() {
   }
 }
 
+/** 打开某 venv 的终端标签（同 venv 幂等激活；收起/重开不销毁会话） */
+async function openVenvTerminal(v: ScriptVenvSummary) {
+  terminalExpanded.value = true;
+  await nextTick();
+  const ws = defaultWorkspace.value.trim();
+  void terminalTabs.value?.addSession(
+    `venv:${v.name}`,
+    { venv: v.name, cwd: ws || undefined, title: v.name },
+    v.name,
+    v.name,
+  );
+}
+
 onMounted(() => {
   void load().catch(report);
 });
@@ -291,6 +308,9 @@ onMounted(() => {
             <span class="venv-path">{{ v.pythonPath }}</span>
           </div>
           <div class="row venv-actions">
+            <AppButton variant="ghost" type="button" @click="openVenvTerminal(v)">
+              {{ t("terminal.open") }}
+            </AppButton>
             <AppButton variant="ghost" type="button" @click="toggleInstall(v.name)">
               {{ t("scripts.venvInstall") }}
             </AppButton>
@@ -345,6 +365,22 @@ onMounted(() => {
             class="install-output"
             data-scrollbar="thin"
           >{{ installResult.exitCode === 0 ? "" : t("scripts.exitCode", { code: installResult.exitCode ?? "—" }) + "\n\n—— stdout ——\n" }}{{ installResult.stdout || (installResult.exitCode === 0 ? "(empty)" : "") }}{{ installResult.stderr ? "\n\n—— stderr ——\n" + installResult.stderr : "" }}</pre>
+        </div>
+      </div>
+      <div v-show="terminalExpanded" class="terminal-area">
+        <div class="terminal-area-head">
+          <h4>{{ t("terminal.tabTitle") }}</h4>
+          <div class="row">
+            <AppButton variant="ghost" type="button" disabled>
+              {{ t("terminal.popOut") }}
+            </AppButton>
+            <AppButton variant="ghost" type="button" @click="terminalExpanded = false">
+              {{ t("terminal.collapse") }}
+            </AppButton>
+          </div>
+        </div>
+        <div class="terminal-area-body">
+          <TerminalTabs ref="terminalTabs" />
         </div>
       </div>
       <p class="hint">{{ t("scripts.venvHint") }}</p>
@@ -424,6 +460,35 @@ onMounted(() => {
 
 .venv-name-input {
   min-width: 160px;
+}
+
+/* venv 终端展开区：v-show 保挂载（收起不销毁会话） */
+.terminal-area {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.terminal-area-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-area-head h4 {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.terminal-area-body {
+  height: 280px;
+  min-height: 0;
 }
 
 .venv-item {
