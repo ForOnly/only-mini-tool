@@ -76,7 +76,7 @@ impl TerminalRegistry {
         };
 
         // env 组装：载荷覆盖项 + venv 激活注入（venv 侧键胜出——VIRTUAL_ENV/PATH/PROMPT/PYTHONUTF8）
-        let mut env_overlay = payload.env.clone();
+        let mut env_overlay = payload.env.clone().unwrap_or_default();
         if let (Some(root), Some(name)) = (&venv_root, venv_ref) {
             for (key, value) in shell::venv_env(root, name) {
                 env_overlay.insert(key, value);
@@ -86,7 +86,7 @@ impl TerminalRegistry {
         let spawn_cfg = shell::spawn_command(&kind);
         let init_commands = {
             let mut cmds = shell::default_init_commands(&kind, venv_ref);
-            cmds.extend(payload.init_commands.iter().cloned());
+            cmds.extend(payload.init_commands.clone().unwrap_or_default());
             cmds
         };
 

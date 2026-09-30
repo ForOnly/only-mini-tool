@@ -206,6 +206,21 @@ export default {
     templateStdin: "stdin JSON",
     templateParamsModule: "params module (recommended)",
   },
+  terminal: {
+    tabTitle: "Terminal",
+    newTab: "New session",
+    close: "Close",
+    exited: "Exited (code {code})",
+    exitedNoCode: "Exited",
+    restart: "New session",
+    loadFailed: "Terminal failed to load",
+    open: "Terminal",
+    popOut: "Pop out",
+    expand: "Expand terminal",
+    collapse: "Collapse terminal",
+    sessionClosed: "Session closed",
+    windowTitle: "Terminal — {name}",
+  },
   errors: {
     unknown: "Unknown error",
     ocr: {
@@ -221,6 +236,11 @@ export default {
     },
     scripts: {
       busy: "A script is already running — try again later",
+    },
+    terminal: {
+      spawn_failed: "Terminal failed to start (no usable shell?)",
+      not_found: "Terminal session not found (it may have been closed)",
+      io_failed: "Terminal I/O failed (session may have exited)",
     },
     not_found: "Not found",
     validation_error: "Invalid input",

@@ -201,6 +201,21 @@ export default {
     templateStdin: "stdin JSON",
     templateParamsModule: "参数模块（推荐）",
   },
+  terminal: {
+    tabTitle: "终端",
+    newTab: "新建会话",
+    close: "关闭",
+    exited: "已退出（退出码 {code}）",
+    exitedNoCode: "已退出",
+    restart: "新建会话",
+    loadFailed: "终端加载失败",
+    open: "终端",
+    popOut: "弹出窗口",
+    expand: "展开终端",
+    collapse: "收起终端",
+    sessionClosed: "会话已关闭",
+    windowTitle: "终端 — {name}",
+  },
   errors: {
     unknown: "未知错误",
     ocr: {
@@ -216,6 +231,11 @@ export default {
     },
     scripts: {
       busy: "已有脚本在运行，请稍后再试",
+    },
+    terminal: {
+      spawn_failed: "终端启动失败（未找到可用 Shell？）",
+      not_found: "终端会话不存在（可能已关闭）",
+      io_failed: "终端读写失败（会话可能已退出）",
     },
     not_found: "未找到资源",
     validation_error: "参数无效",

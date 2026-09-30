@@ -11,7 +11,7 @@ cwd?: string,
 /**
  * 追加到继承的全量系统环境之上（终端不像 runner 管道那样 env_clear）
  */
-env: { [key in string]?: string }, 
+env?: { [key in string]?: string }, 
 /**
  * 初始列数（clamp 10..=500，默认 80）
  */
@@ -27,7 +27,7 @@ shell?: string,
 /**
  * 会话启动后追加写入的命令（逐条补 \r）；排在默认编码/提示符命令之后
  */
-initCommands: Array<string>, 
+initCommands?: Array<string>, 
 /**
  * venv 引用（".venv" = 默认 workspace；命名 = venvs/<name>）；
  * 缺失则静默跳过激活（解析容错，与运行链一致）

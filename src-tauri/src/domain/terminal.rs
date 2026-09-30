@@ -15,7 +15,8 @@ pub struct TerminalCreatePayload {
     pub cwd: Option<String>,
     /// 追加到继承的全量系统环境之上（终端不像 runner 管道那样 env_clear）
     #[serde(default)]
-    pub env: HashMap<String, String>,
+    #[ts(optional)]
+    pub env: Option<HashMap<String, String>>,
     /// 初始列数（clamp 10..=500，默认 80）
     #[ts(optional)]
     pub cols: Option<u16>,
@@ -27,7 +28,8 @@ pub struct TerminalCreatePayload {
     pub shell: Option<String>,
     /// 会话启动后追加写入的命令（逐条补 \r）；排在默认编码/提示符命令之后
     #[serde(default)]
-    pub init_commands: Vec<String>,
+    #[ts(optional)]
+    pub init_commands: Option<Vec<String>>,
     /// venv 引用（".venv" = 默认 workspace；命名 = venvs/<name>）；
     /// 缺失则静默跳过激活（解析容错，与运行链一致）
     #[ts(optional)]
