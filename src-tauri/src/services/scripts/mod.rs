@@ -265,13 +265,13 @@ impl ScriptsService {
             Err(AppError::ValidationError {
                 message: match kind {
                     "missing" => format!(
-                        "black is not installed for {interpreter} — install it into the \
-                         default workspace .venv (settings → venv row （workspace） → \
-                         Install deps → black), or create that .venv first"
+                        "black is not installed for {interpreter} — open a terminal on the \
+                         default workspace venv (settings → venv row → Terminal) and run \
+                         `pip install black`, or create that .venv first"
                     ),
                     "broken" => format!(
                         "black is broken or shadowed for {interpreter} — reinstall into that \
-                         environment (Install deps → black, or pip install --force-reinstall black)"
+                         environment (terminal → `pip install --force-reinstall black`)"
                     ),
                     _ => format!(
                         "black failed for {interpreter} (exit {:?}): {}",
@@ -281,118 +281,6 @@ impl ScriptsService {
                 },
             })
         }
-    }
-
-    /// 向指定 venv 安装依赖（`python -m pip install`，复用执行内核）。
-    /// `name == ".venv"` → 默认 workspace；否则托管 `venvs/<name>/`。
-    /// interpreter 为 venv python 绝对路径——天然不受 mise/pyenv shim 目录敏感影响。
-    /// 不提供取消（pip 中途被杀留半装环境）；超时 600s 由 runner 杀树兜底、重跑幂等修复。
-    pub async fn install_venv_packages(
-        app: &AppHandle,
-        db: &Database,
-        name: &str,
-        packages: Vec<String>,
-        requirements: Option<String>,
-    ) -> Result<ScriptRunResult, AppError> {
-        let name = normalize_venv_ref(name)?;
-        let root = require_venv_root(app, db, &name).await?;
-        let Some(venv_python) = python_exists(&root).await else {
-            return Err(AppError::ValidationError {
-                message: format!("venv not found: {name}"),
-            });
-        };
-
-        let mut args = vec!["-m".into(), "pip".into(), "install".into()];
-        let mut pkgs: Vec<String> = packages
-            .into_iter()
-            .map(|p| p.trim().to_string())
-            .filter(|p| !p.is_empty())
-            .collect();
-        let has_requirements = requirements
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .is_some();
-        if let Some(req) = requirements
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            if !Path::new(req).exists() {
-                return Err(AppError::ValidationError {
-                    message: format!("requirements file not found: {req}"),
-                });
-            }
-            args.push("-r".into());
-            args.push(req.to_string());
-        }
-        if pkgs.is_empty() && !has_requirements {
-            return Err(AppError::ValidationError {
-                message: "nothing to install: provide packages or a requirements file".into(),
-            });
-        }
-        args.append(&mut pkgs);
-
-        let registry = ScriptRunRegistry::global();
-        let run_id = Uuid::new_v4();
-        let Some(token) = registry.try_register(run_id) else {
-            return Err(AppError::ScriptsBusy {
-                message: "a script is already running".into(),
-            });
-        };
-        let result = Self::pip_install_registered(app, &venv_python, args, token).await;
-        registry.unregister(&run_id);
-        result
-    }
-
-    async fn pip_install_registered(
-        app: &AppHandle,
-        venv_python: &str,
-        args: Vec<String>,
-        token: CancellationToken,
-    ) -> Result<ScriptRunResult, AppError> {
-        let cwd = venvs_dir(app)?;
-        let mut env: HashMap<String, String> = std::env::vars().collect();
-        prepare::ensure_stdio_utf8(&mut env);
-
-        // 等效命令 = venv python + 完整 pip 参数（手工拼，不经 display_command）
-        let command = format!("{} {}", venv_python, args.join(" "));
-        let install_started = std::time::Instant::now();
-        tracing::info!(
-            "[scripts.venv] pip install start: python={} command={}",
-            venv_python,
-            command
-        );
-
-        let outcome = runner::spawn_and_stream(
-            SpawnOptions {
-                interpreter: venv_python.to_string(),
-                args: args.clone(),
-                cwd,
-                env,
-                stdin_json: serde_json::json!({}),
-                // 大依赖（torch 等）超 300s；硬编码不进 settings（Won't 纪律）
-                timeout: Duration::from_secs(600),
-            },
-            token,
-        )
-        .await?;
-
-        tracing::info!(
-            "[scripts.venv] pip install finished: exit={:?} cancelled={} stdout_bytes={} stderr_bytes={} elapsed={}ms",
-            outcome.exit_code,
-            outcome.cancelled,
-            outcome.stdout.len(),
-            outcome.stderr.len(),
-            install_started.elapsed().as_millis()
-        );
-        Ok(ScriptRunResult {
-            exit_code: outcome.exit_code,
-            stdout: outcome.stdout,
-            stderr: outcome.stderr,
-            cancelled: outcome.cancelled,
-            command,
-        })
     }
 
     /// 在全局默认 workspace 创建 `.venv`（复用执行内核，与脚本运行共享单飞）。

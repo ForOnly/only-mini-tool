@@ -251,17 +251,6 @@ pub async fn delete_script_venv(
 }
 
 #[tauri::command]
-pub async fn install_script_venv_packages(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    name: String,
-    packages: Vec<String>,
-    requirements: Option<String>,
-) -> Result<ScriptRunResult, AppError> {
-    ScriptsService::install_venv_packages(&app, &state.db, &name, packages, requirements).await
-}
-
-#[tauri::command]
 pub async fn format_script_code(
     app: AppHandle,
     state: State<'_, AppState>,

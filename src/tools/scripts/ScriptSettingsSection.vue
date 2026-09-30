@@ -12,12 +12,11 @@ import {
   createScriptsVenv,
   deleteScriptVenv,
   getScriptsSettings,
-  installScriptVenvPackages,
   listScriptVenvs,
   saveScriptsSettings,
 } from "@/api/scripts";
 import { setSetting } from "@/api/settings";
-import type { ScriptRunResult, ScriptVenvSummary } from "@/api/types";
+import type { ScriptVenvSummary } from "@/api/types";
 import { openChildWindow } from "@/platform/childWindow";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
@@ -35,12 +34,6 @@ const venvCreating = ref(false);
 const venvs = ref<ScriptVenvSummary[]>([]);
 const newVenvName = ref("");
 const deleteVenvName = ref<string | null>(null);
-/** 当前展开安装面板的 venv 名（null = 无展开） */
-const expandedInstall = ref<string | null>(null);
-const installPkgs = ref("");
-const installReq = ref("");
-const installing = ref(false);
-const installResult = ref<ScriptRunResult | null>(null);
 /** venv 终端展开区（v-show 保挂载——收起不销毁会话，重展开回放） */
 const terminalExpanded = ref(false);
 const terminalTabs = ref<InstanceType<typeof TerminalTabs> | null>(null);
@@ -168,47 +161,6 @@ async function pickWorkspace() {
   }
 }
 
-/** 展开/收起某 venv 的安装面板（单展开；收起时清输入） */
-function toggleInstall(name: string) {
-  if (expandedInstall.value === name) {
-    expandedInstall.value = null;
-  } else {
-    expandedInstall.value = name;
-    installPkgs.value = "";
-    installReq.value = "";
-    installResult.value = null;
-  }
-}
-
-/** 浏览选择 requirements 文件（仅选择，杜绝相对路径歧义） */
-async function pickRequirements() {
-  const selected = await open({ multiple: false, filters: [{ name: "requirements", extensions: ["txt"] }] });
-  if (typeof selected === "string") {
-    installReq.value = selected;
-  }
-}
-
-/** 执行安装（无取消——pip 中途被杀留半装环境；超时后端兜底） */
-async function onInstall() {
-  const name = expandedInstall.value;
-  if (!name || installing.value) return;
-  const pkgs = installPkgs.value.split(/\s+/).map((s) => s.trim()).filter(Boolean);
-  const req = installReq.value.trim() || undefined;
-  if (!pkgs.length && !req) return;
-  installing.value = true;
-  installResult.value = null;
-  try {
-    installResult.value = await installScriptVenvPackages(name, pkgs, req);
-    if (installResult.value.exitCode === 0) {
-      success(t("scripts.venvInstallDone"));
-    }
-  } catch (err) {
-    report(err);
-  } finally {
-    installing.value = false;
-  }
-}
-
 /** 打开某 venv 的终端标签（同 venv 幂等激活；收起/重开不销毁会话） */
 async function openVenvTerminal(v: ScriptVenvSummary) {
   terminalExpanded.value = true;
@@ -330,9 +282,6 @@ onMounted(() => {
             <AppButton variant="ghost" type="button" @click="openVenvTerminal(v)">
               {{ t("terminal.open") }}
             </AppButton>
-            <AppButton variant="ghost" type="button" @click="toggleInstall(v.name)">
-              {{ t("scripts.venvInstall") }}
-            </AppButton>
             <AppButton
               v-if="!v.workspace"
               variant="ghost"
@@ -349,41 +298,6 @@ onMounted(() => {
               {{ t("scripts.venvDelete") }}
             </AppButton>
           </div>
-        </div>
-        <div v-if="expandedInstall === v.name" class="install-panel">
-          <div class="row">
-            <AppInput
-              v-model="installPkgs"
-              :placeholder="t('scripts.venvInstallPkgs')"
-              :disabled="installing"
-              class="install-input"
-            />
-            <AppInput
-              :model-value="installReq"
-              :placeholder="t('scripts.venvInstallReq')"
-              readonly
-              class="install-input"
-            />
-            <AppButton variant="ghost" type="button" :disabled="installing" @click="pickRequirements">
-              {{ t("scripts.browse") }}
-            </AppButton>
-            <AppButton
-              variant="primary"
-              type="button"
-              :disabled="installing || (!installPkgs.trim() && !installReq.trim())"
-              @click="onInstall"
-            >
-              {{ installing ? t("scripts.venvInstalling") : t("scripts.venvInstallRun") }}
-            </AppButton>
-          </div>
-          <p v-if="installResult" class="hint install-command">
-            {{ installResult.command }}
-          </p>
-          <pre
-            v-if="installResult"
-            class="install-output"
-            data-scrollbar="thin"
-          >{{ installResult.exitCode === 0 ? "" : t("scripts.exitCode", { code: installResult.exitCode ?? "—" }) + "\n\n—— stdout ——\n" }}{{ installResult.stdout || (installResult.exitCode === 0 ? "(empty)" : "") }}{{ installResult.stderr ? "\n\n—— stderr ——\n" + installResult.stderr : "" }}</pre>
         </div>
       </div>
       <div v-show="terminalExpanded" class="terminal-area">
@@ -530,38 +444,6 @@ onMounted(() => {
 .venv-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
-}
-
-.install-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-top: 1px dashed var(--border);
-}
-
-.install-input {
-  min-width: 140px;
-}
-
-.install-command {
-  margin: 0;
-  font-size: var(--text-xs, 12px);
-  word-break: break-all;
-}
-
-.install-output {
-  margin: 0;
-  max-height: 240px;
-  overflow: auto;
-  padding: var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.45;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .venv-main {

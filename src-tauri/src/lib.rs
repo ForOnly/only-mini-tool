@@ -66,7 +66,6 @@ pub fn run() {
             commands::create_script_venv,
             commands::list_script_venvs,
             commands::delete_script_venv,
-            commands::install_script_venv_packages,
             commands::format_script_code,
             commands::terminal_create,
             commands::terminal_attach,
