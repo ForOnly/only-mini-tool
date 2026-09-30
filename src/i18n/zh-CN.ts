@@ -50,7 +50,7 @@ export default {
     logsClear: "清空",
     logsEmpty: "（暂无日志）",
     ocrSection: "OCR 引擎",
-    ocrKeyringHint: "引擎密钥保存在系统凭据库（Windows 凭据管理器），不再明文写入本地数据库。",
+    ocrKeyringHint: "引擎密钥保存在系统凭据库（Windows 凭据管理器）。",
     ocrEngine: "当前引擎",
     ocrEngine_baidu: "百度 handwriting",
     ocrEngine_paddle: "PaddleOCR 官方 API",

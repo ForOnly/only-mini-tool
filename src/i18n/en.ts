@@ -51,8 +51,7 @@ export default {
     logsClear: "Clear",
     logsEmpty: "(no logs yet)",
     ocrSection: "OCR engine",
-    ocrKeyringHint:
-      "Engine secrets are stored in the OS credential store (Windows Credential Manager), not as plaintext in the local database.",
+    ocrKeyringHint: "Engine secrets are stored in the OS credential store (Windows Credential Manager).",
     ocrEngine: "Active engine",
     ocrEngine_baidu: "Baidu handwriting",
     ocrEngine_paddle: "PaddleOCR official API",
