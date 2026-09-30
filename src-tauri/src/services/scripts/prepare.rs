@@ -218,8 +218,6 @@ pub fn ensure_stdio_utf8(env: &mut HashMap<String, String>) {
 
 /// 生成参数模块文件名（固定名：应用专属前缀防用户脚本模块冲突；单飞保证无并发碰撞）。
 pub const PARAMS_MODULE_FILE: &str = "onlytool_params.py";
-/// 参数模块导入名（去 .py）。
-pub const PARAMS_MODULE_NAME: &str = "onlytool_params";
 
 /// Python 关键字（codegen 字段名 + schema 保存校验共用）。
 pub fn is_python_keyword(word: &str) -> bool {
@@ -350,7 +348,7 @@ pub fn render_params_module(
 ) -> String {
     // required 无默认在前、optional 带默认在后（dataclass 字段序约束）
     let mut ordered: Vec<&ScriptParamDef> = schema.iter().collect();
-    ordered.sort_by_key(|d| d.required == false);
+    ordered.sort_by_key(|d| !d.required);
 
     let mut needs_literal = false;
     let mut class_fields = String::new();
