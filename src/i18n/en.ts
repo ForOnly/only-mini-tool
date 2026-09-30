@@ -157,6 +157,10 @@ export default {
     exitCode: "Exit code: {code}",
     unsavedTitle: "Unsaved changes",
     unsavedMessage: "Save before leaving, or discard changes?",
+    remoteUpdated: "Script changed in another window",
+    remoteUpdatedMessage: "This script differs from the saved copy. Use the saved version, or keep your local edits?",
+    useRemote: "Use saved",
+    keepLocal: "Keep local",
     settingsSection: "Scripts",
     pythonPath: "Python path",
     pythonPathHint:

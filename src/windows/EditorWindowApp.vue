@@ -18,6 +18,7 @@ import { useAppearance } from "@/composables/useAppearance";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
 import { registerPythonProviders, setParamsSchema } from "@/tools/scripts/monacoPython";
+import { snapshotKey } from "@/tools/scripts/useScripts";
 import ChildWindowTitleBar from "@/windows/ChildWindowTitleBar.vue";
 
 const props = defineProps<{
@@ -75,11 +76,15 @@ async function load() {
 async function save(): Promise<boolean> {
   if (!script.value || saving.value) return false;
   saving.value = true;
+  const sentBody = body.value;
   try {
-    const updated = await updateScript(props.scriptId, toUpdate(script.value, body.value));
+    const updated = await updateScript(props.scriptId, toUpdate(script.value, sentBody));
     script.value = updated;
-    body.value = updated.body;
     savedBody.value = updated.body;
+    // 保存窗口期有并发键入则保留本地内容（保持 dirty）；无键入才回写
+    if (body.value === sentBody) {
+      body.value = updated.body;
+    }
     success(t("scripts.saved"));
     return true;
   } catch (err) {
@@ -90,6 +95,61 @@ async function save(): Promise<boolean> {
   }
 }
 
+/** 跨窗同步（focus 拉取式）：主窗保存后本窗重新聚焦时快照比对——
+ *  非脏静默刷新；脏则三分支确认（不用 updatedAt——SQLite 秒级精度会漏检）。 */
+const remoteConfirmOpen = ref(false);
+
+async function syncFromRemote() {
+  if (saving.value || !script.value) return;
+  try {
+    const remote = await getScript(props.scriptId);
+    if (snapshotKey(remote) === snapshotKey(script.value)) return; // 无变化
+    const dirtyNow = body.value !== savedBody.value;
+    if (!dirtyNow) {
+      script.value = remote;
+      body.value = remote.body;
+      savedBody.value = remote.body;
+      return;
+    }
+    pendingRemote.value = remote;
+    remoteConfirmOpen.value = true;
+  } catch {
+    /* 主窗可能已删除该脚本——保持现状 */
+  }
+}
+
+const pendingRemote = ref<ScriptDto | null>(null);
+
+function confirmUseRemote() {
+  remoteConfirmOpen.value = false;
+  const remote = pendingRemote.value;
+  pendingRemote.value = null;
+  if (remote) {
+    script.value = remote;
+    body.value = remote.body;
+    savedBody.value = remote.body;
+  }
+}
+
+function confirmKeepLocal() {
+  remoteConfirmOpen.value = false;
+  const remote = pendingRemote.value;
+  pendingRemote.value = null;
+  // 保留本地编辑；基准换远端（dirty 继续，下次保存整体覆盖——行为可预期）
+  if (remote) {
+    script.value = remote;
+    savedBody.value = remote.body;
+  }
+}
+
+function onWindowFocus() {
+  void syncFromRemote();
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") void syncFromRemote();
+}
+
 onMounted(async () => {
   await load();
   const win = getCurrentWindow();
@@ -98,6 +158,8 @@ onMounted(async () => {
     await event.preventDefault();
     closeConfirm.value = true;
   });
+  window.addEventListener("focus", onWindowFocus);
+  document.addEventListener("visibilitychange", onVisibilityChange);
   themeTimer = window.setInterval(() => {
     void refreshAppearance();
   }, 3000);
@@ -105,6 +167,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenClose?.();
+  window.removeEventListener("focus", onWindowFocus);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
   if (themeTimer != undefined) window.clearInterval(themeTimer);
 });
 
@@ -140,6 +204,9 @@ function confirmCloseDiscard() {
     </header>
     <main class="body">
       <div v-if="loadError" class="state" data-scrollbar="thin">{{ loadError }}</div>
+      <!-- script 就绪才挂载：create 初值即真实 body，undo 栈不留「空→全文」步
+           （一次 Ctrl+Z 清空整个脚本的竞态根除） -->
+      <div v-else-if="!script" class="state">{{ t("terminal.loading") }}</div>
       <CodeEditor
         v-else
         :model-value="body"
@@ -159,6 +226,18 @@ function confirmCloseDiscard() {
       @confirm="confirmCloseSave"
       @neutral="confirmCloseDiscard"
       @cancel="closeConfirm = false"
+    />
+
+    <AppConfirm
+      :open="remoteConfirmOpen"
+      :title="t('scripts.remoteUpdated')"
+      :message="t('scripts.remoteUpdatedMessage')"
+      :confirm-label="t('scripts.useRemote')"
+      :cancel-label="t('common.cancel')"
+      :neutral-label="t('scripts.keepLocal')"
+      @confirm="confirmUseRemote"
+      @neutral="confirmKeepLocal"
+      @cancel="remoteConfirmOpen = false"
     />
   </div>
 </template>

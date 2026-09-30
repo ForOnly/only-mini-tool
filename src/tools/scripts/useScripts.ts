@@ -65,7 +65,8 @@ const paramValues = ref<Record<string, string>>({});
 const busy = ref(false);
 const listLoaded = ref(false);
 
-function snapshotKey(dto: ScriptDto): string {
+/** 脚本内容快照键（跨窗口变更比对用——全字段，比 updatedAt 秒级精度可靠）。 */
+export function snapshotKey(dto: ScriptDto): string {
   return JSON.stringify({
     name: dto.name,
     description: dto.description,

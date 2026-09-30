@@ -51,7 +51,13 @@ const loadedLanguages = new Set<string>();
 export async function ensureLanguage(language: string): Promise<void> {
   if (loadedLanguages.has(language)) return;
   const loader = languageContributions[language];
-  if (!loader) return;
+  if (!loader) {
+    // 未登记语言会退化为 plaintext 无高亮——显式告警而非静默
+    if (language && language !== "plaintext") {
+      console.warn(`[monaco] no contribution registered for language "${language}"`);
+    }
+    return;
+  }
   await loader();
   loadedLanguages.add(language);
 }

@@ -17,7 +17,11 @@ export function registerMonacoProviders(
 ): void {
   if (registered.has(id)) return;
   const m = getMonaco();
-  if (!m) return; // 须在 loadMonaco 之后调用
+  if (!m) {
+    // 须在 loadMonaco 之后调用——静默跳过会让补全/格式化无声失效，极难排查
+    console.warn(`[monaco] providers "${id}" registered before loadMonaco — skipped`);
+    return;
+  }
   registered.add(id);
   register(m, reportError);
 }

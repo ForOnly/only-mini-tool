@@ -8,14 +8,14 @@ import ScriptEditor from "@/tools/scripts/ScriptEditor.vue";
 import ScriptMetaPanel from "@/tools/scripts/ScriptMetaPanel.vue";
 import ScriptParamForm from "@/tools/scripts/ScriptParamForm.vue";
 import ScriptRunBar from "@/tools/scripts/ScriptRunBar.vue";
-import { listScriptVenvs } from "@/api/scripts";
-import type { ScriptVenvSummary } from "@/api/types";
+import { getScript, listScriptVenvs } from "@/api/scripts";
+import type { ScriptDto, ScriptVenvSummary } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { useWorkbench } from "@/composables/useWorkbench";
 import { openChildWindow } from "@/platform/childWindow";
 import { usePanelResize } from "@/tools/scripts/usePanelResize";
 import { useScriptRun } from "@/tools/scripts/useScriptRun";
-import { useScripts } from "@/tools/scripts/useScripts";
+import { snapshotKey, useScripts } from "@/tools/scripts/useScripts";
 import { formatAppError } from "@/utils/error";
 
 const { t } = useI18n();
@@ -183,19 +183,11 @@ async function onCancel() {
   }
 }
 
-/** 拖出编辑器子窗口：脏则先保存（对齐运行前保存语义），同脚本聚焦已有窗口。
- *  已知限制：与主窗并行编辑为 last-save-wins（无跨窗同步）。 */
+/** 拖出编辑器子窗口：不强制保存（强制保存制造「主窗干净」假象，回补几字
+ *  保存即覆盖子窗成果）；子窗加载已存版本，跨窗冲突由 focus 快照同步守卫。 */
 async function onPopOutEditor() {
   if (!draft.value) return;
   try {
-    if (dirty.value) {
-      saving.value = true;
-      try {
-        await save();
-      } finally {
-        saving.value = false;
-      }
-    }
     const id = scriptIdNum(draft.value.id);
     await openChildWindow({
       kind: "editor",
@@ -207,6 +199,65 @@ async function onPopOutEditor() {
     report(err);
   }
 }
+
+/** 跨窗同步（focus 拉取式）：子窗保存后本窗重新聚焦时快照比对——
+ *  非脏静默刷新 draft；脏则三分支确认（不用 updatedAt——SQLite 秒级精度漏检）。 */
+const remoteConfirmOpen = ref(false);
+
+async function syncFromRemote() {
+  if (saving.value || running.value || !current.value || !draft.value) return;
+  try {
+    const remote = await getScript(scriptIdNum(current.value.id));
+    if (snapshotKey(remote) === snapshotKey(current.value)) return; // 无变化
+    if (!dirty.value) {
+      current.value = remote;
+      draft.value = remote;
+      return;
+    }
+    pendingRemote.value = remote;
+    remoteConfirmOpen.value = true;
+  } catch {
+    /* 脚本可能已在别处删除——保持现状 */
+  }
+}
+
+const pendingRemote = ref<ScriptDto | null>(null);
+
+function confirmUseRemote() {
+  remoteConfirmOpen.value = false;
+  const remote = pendingRemote.value;
+  pendingRemote.value = null;
+  if (remote) {
+    current.value = remote;
+    draft.value = remote;
+  }
+}
+
+function confirmKeepLocal() {
+  remoteConfirmOpen.value = false;
+  const remote = pendingRemote.value;
+  pendingRemote.value = null;
+  // 保留本地编辑；基准换远端（dirty 继续，下次保存整体覆盖——行为可预期）
+  if (remote) current.value = remote;
+}
+
+function onWindowFocus() {
+  void syncFromRemote();
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === "visible") void syncFromRemote();
+}
+
+onMounted(() => {
+  window.addEventListener("focus", onWindowFocus);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("focus", onWindowFocus);
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+});
 
 /** 状态文字（未保存 · 计时器）——LogPanel 头部唯一持久状态位 */
 const now = ref(Date.now());
@@ -302,6 +353,18 @@ const statusText = computed(() => {
       @confirm="confirmLeaveSave"
       @neutral="confirmLeaveDiscard"
       @cancel="leaveOpen = false; leaveAction = null"
+    />
+
+    <AppConfirm
+      :open="remoteConfirmOpen"
+      :title="t('scripts.remoteUpdated')"
+      :message="t('scripts.remoteUpdatedMessage')"
+      :confirm-label="t('scripts.useRemote')"
+      :cancel-label="t('common.cancel')"
+      :neutral-label="t('scripts.keepLocal')"
+      @confirm="confirmUseRemote"
+      @neutral="confirmKeepLocal"
+      @cancel="remoteConfirmOpen = false"
     />
   </div>
 </template>
