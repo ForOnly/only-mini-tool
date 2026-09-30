@@ -121,6 +121,8 @@ pub async fn spawn_and_stream(
     for (k, v) in &opts.env {
         cmd.env(k, v);
     }
+    // GUI 父进程必加：抑制 console 分配（0xC0000142 根因 + 闪窗），见 infrastructure::process
+    crate::infrastructure::process::no_window(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| AppError::InternalError {
         message: format!("failed to start python ({}): {e}", opts.interpreter),
@@ -258,11 +260,13 @@ pub fn kill_tree(pid: Option<u32>) {
     let Some(pid) = pid else { return };
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
+        let mut kill = std::process::Command::new("taskkill");
+        kill.args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+            .stderr(Stdio::null());
+        // taskkill 自身也是控制台进程——同样抑制 console 分配（防闪窗）
+        crate::infrastructure::process::no_window_std(&mut kill);
+        let _ = kill.status();
     }
     #[cfg(unix)]
     {

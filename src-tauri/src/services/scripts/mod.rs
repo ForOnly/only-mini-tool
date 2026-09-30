@@ -200,12 +200,18 @@ impl ScriptsService {
 
         // cwd 固定 venvs 目录：防 mise/pyenv shim 按进程目录解析（无 cwd 继承 app 目录）
         let spawn_dir = venvs_dir(app)?;
-        let mut child = tokio::process::Command::new(&interpreter)
+        let mut spawn_cmd = tokio::process::Command::new(&interpreter);
+        spawn_cmd
             .args(["-m", "black", "--quiet", "-"])
             .current_dir(&spawn_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            // 超时路径 drop 即杀——30s 兜底后不泄漏 python.exe
+            .kill_on_drop(true);
+        // GUI 父进程必加：抑制 console 分配（0xC0000142 根因 + 闪窗）
+        crate::infrastructure::process::no_window(&mut spawn_cmd);
+        let mut child = spawn_cmd
             .spawn()
             .map_err(|e| AppError::InternalError {
                 message: format!("start python for black ({interpreter}): {e}"),
@@ -835,12 +841,13 @@ async fn named_venv_python(app: &AppHandle, name: &str) -> Option<String> {
 /// cwd 用调用方指定的真实场景目录（如 venvs 根——mise/pyenv shim 按目录解析）。
 async fn probe_python(python: &str, probe_cwd: &Path) -> Result<(), AppError> {
     let probe = async {
-        tokio::process::Command::new(python)
-            .arg("--version")
+        let mut cmd = tokio::process::Command::new(python);
+        cmd.arg("--version")
             .current_dir(probe_cwd)
-            .stdin(Stdio::null())
-            .output()
-            .await
+            .stdin(Stdio::null());
+        // GUI 父进程必加：抑制 console 分配（0xC0000142 根因 + 闪窗）
+        crate::infrastructure::process::no_window(&mut cmd);
+        cmd.output().await
     };
     let output = match tokio::time::timeout(Duration::from_secs(10), probe).await {
         Ok(Ok(out)) => out,
