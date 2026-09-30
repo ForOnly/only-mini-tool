@@ -156,6 +156,84 @@ impl ScriptsService {
         ScriptRunRegistry::global().cancel_all();
     }
 
+    /// black 格式化脚本代码（`python -m black --quiet -`，stdin 进 stdout 出）。
+    /// 轻量 spawn（同 probe_python 模式，不占 runner 单飞）；解释器按全局子链解析
+    /// （全局启用 venv > workspace `.venv` > 全局 python——不查脚本，draft 未保存也正确）。
+    pub async fn format_code(
+        app: &AppHandle,
+        db: &Database,
+        code: &str,
+    ) -> Result<String, AppError> {
+        let settings = Self::get_settings(db)?;
+        let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
+        let global_venv = settings.venv.trim();
+        let venv_python = if !global_venv.is_empty() {
+            named_venv_python(app, global_venv)
+                .await
+                .or(venv_python_at(&fallback_dir).await)
+        } else {
+            venv_python_at(&fallback_dir).await
+        };
+        let interpreter =
+            prepare::resolve_interpreter(venv_python.as_deref(), &settings.python_path);
+        if interpreter.is_empty() {
+            return Err(AppError::ValidationError {
+                message: "python interpreter path is empty".into(),
+            });
+        }
+
+        let mut child = tokio::process::Command::new(&interpreter)
+            .args(["-m", "black", "--quiet", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| AppError::InternalError {
+                message: format!("start python for black ({interpreter}): {e}"),
+            })?;
+        // 写 stdin 后 wait_with_output（10s 超时兜底）
+        {
+            use tokio::io::AsyncWriteExt;
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(code.as_bytes()).await;
+            } // stdin drop → EOF，black 输出结果
+        }
+        let waited = tokio::time::timeout(Duration::from_secs(10), child.wait_with_output()).await;
+        let out = match waited {
+            Ok(Ok(out)) => out,
+            Ok(Err(e)) => {
+                return Err(AppError::InternalError {
+                    message: format!("wait black: {e}"),
+                });
+            }
+            Err(_) => {
+                return Err(AppError::ValidationError {
+                    message: "black formatting timed out (10s)".into(),
+                });
+            }
+        };
+
+        if out.status.success() {
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+            let missing = stderr.contains("No module named black");
+            Err(AppError::ValidationError {
+                message: if missing {
+                    "black is not installed — install it into the active venv \
+                     (venv row → Install deps → black)"
+                        .into()
+                } else {
+                    format!(
+                        "black failed (exit {:?}): {}",
+                        out.status.code(),
+                        stderr.trim()
+                    )
+                },
+            })
+        }
+    }
+
     /// 向指定命名 venv 安装依赖（`python -m pip install`，复用执行内核）。
     /// interpreter 为 venv python 绝对路径——天然不受 mise/pyenv shim 目录敏感影响。
     /// 不提供取消（pip 中途被杀留半装环境）；超时 600s 由 runner 杀树兜底、重跑幂等修复。

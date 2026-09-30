@@ -261,6 +261,15 @@ pub async fn open_script_venv_terminal(app: AppHandle, name: String) -> Result<(
     ScriptsService::open_venv_terminal(&app, &name).await
 }
 
+#[tauri::command]
+pub async fn format_script_code(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<String, AppError> {
+    ScriptsService::format_code(&app, &state.db, &code).await
+}
+
 fn require_debug(state: &State<'_, AppState>) -> Result<(), AppError> {
     if SettingsService::is_debug_enabled(&state.db)? {
         Ok(())

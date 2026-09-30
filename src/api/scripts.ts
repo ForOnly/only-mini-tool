@@ -86,3 +86,7 @@ export function installScriptVenvPackages(
 export function openScriptVenvTerminal(name: string): Promise<void> {
   return invoke("open_script_venv_terminal", { name });
 }
+
+export function formatScriptCode(code: string): Promise<string> {
+  return invoke<string>("format_script_code", { code });
+}

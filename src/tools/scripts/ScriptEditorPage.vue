@@ -249,7 +249,9 @@ const statusText = computed(() => {
       <section class="center">
         <ScriptEditor
           :model-value="draft.body"
+          :params-schema="draft.paramsSchema"
           @update:model-value="draft.body = $event"
+          @save="onSave"
         />
       </section>
     </div>
