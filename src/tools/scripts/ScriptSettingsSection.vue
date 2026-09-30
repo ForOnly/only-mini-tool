@@ -18,6 +18,7 @@ import {
 } from "@/api/scripts";
 import { setSetting } from "@/api/settings";
 import type { ScriptRunResult, ScriptVenvSummary } from "@/api/types";
+import { openChildWindow } from "@/platform/childWindow";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
 
@@ -221,6 +222,24 @@ async function openVenvTerminal(v: ScriptVenvSummary) {
   );
 }
 
+/** 整组拖出为独立终端窗口：所有权移交子窗（关窗销毁），本地折叠（会话经
+ *  双附着继续同步；窗口关闭后展开区收敛到退出态） */
+async function popOutTerminals() {
+  const payload = terminalTabs.value?.sessionsPayload();
+  if (!payload || payload.ids.length === 0) return;
+  const label = `terminal-${payload.ids[0].slice(0, 8)}-${payload.ids.length}`;
+  await openChildWindow({
+    kind: "terminal",
+    label,
+    title: t("terminal.tabTitle"),
+    params: {
+      sessionIds: payload.ids.join(","),
+      titles: payload.titles.join(","),
+    },
+  });
+  terminalExpanded.value = false;
+}
+
 onMounted(() => {
   void load().catch(report);
 });
@@ -371,7 +390,7 @@ onMounted(() => {
         <div class="terminal-area-head">
           <h4>{{ t("terminal.tabTitle") }}</h4>
           <div class="row">
-            <AppButton variant="ghost" type="button" disabled>
+            <AppButton variant="ghost" type="button" @click="popOutTerminals">
               {{ t("terminal.popOut") }}
             </AppButton>
             <AppButton variant="ghost" type="button" @click="terminalExpanded = false">

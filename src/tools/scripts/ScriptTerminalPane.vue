@@ -12,6 +12,7 @@ import TerminalView from "@/components/terminal/TerminalView.vue";
 import { resolveScriptTerminal } from "@/api/terminal";
 import type { TerminalCreatePayload } from "@/api/types";
 import { useTerminalSessions } from "@/components/terminal/useTerminalSessions";
+import { openChildWindow } from "@/platform/childWindow";
 import { useMessage } from "@/composables/useMessage";
 import { formatAppError } from "@/utils/error";
 
@@ -21,7 +22,7 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const { error } = useMessage();
-const { disposeSession } = useTerminalSessions();
+const { disposeSession, getSession } = useTerminalSessions();
 
 const config = ref<TerminalCreatePayload | null>(null);
 const venvName = ref<string | null>(null);
@@ -71,6 +72,20 @@ function reopen() {
   sessionClosed.value = false;
   epoch.value += 1;
 }
+
+/** 弹出为独立终端窗口：会话所有权移交子窗（关窗即销毁）；
+ *  dock 侧保留双附着实时同步，窗口关闭后经 Exit/not_found 收敛到占位态。 */
+async function popOut() {
+  const state = getSession(sessionKey(props.scriptId));
+  if (!state) return;
+  const name = venvName.value ?? t("terminal.tabTitle");
+  await openChildWindow({
+    kind: "terminal",
+    label: `terminal-${state.id.slice(0, 8)}`,
+    title: t("terminal.windowTitle", { name }),
+    params: { sessionIds: state.id, titles: name },
+  });
+}
 </script>
 
 <template>
@@ -80,7 +95,12 @@ function reopen() {
         {{ venvName ?? t("terminal.venvNone") }}
       </span>
       <div class="actions">
-        <AppButton variant="ghost" type="button" disabled>
+        <AppButton
+          variant="ghost"
+          type="button"
+          :disabled="sessionClosed || !getSession(sessionKey(scriptId))"
+          @click="popOut"
+        >
           {{ t("terminal.popOut") }}
         </AppButton>
         <AppButton variant="ghost" type="button" :disabled="sessionClosed" @click="closeSession">

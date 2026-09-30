@@ -39,6 +39,8 @@ const host = ref<HTMLDivElement | null>(null);
 const loadError = ref<string | null>(null);
 const exited = ref(false);
 const exitCode = ref<number | null>(null);
+/** 会话已被销毁（如拖出窗口后关闭）——与自然退出区分文案，可重建 */
+const sessionClosed = ref(false);
 
 let term: Terminal | null = null;
 let fit: FitAddon | null = null;
@@ -103,6 +105,7 @@ async function boot() {
   loadError.value = null;
   exited.value = false;
   exitCode.value = null;
+  sessionClosed.value = false;
   try {
     const bundle = await loadXterm();
     const terminal = new bundle.Terminal({
@@ -131,8 +134,14 @@ async function boot() {
     fitNow();
     terminal.focus();
   } catch (err) {
-    console.error("[terminal] boot failed:", err);
-    loadError.value = String(err);
+    const code = (err as { code?: string })?.code;
+    if (code === "terminal.not_found") {
+      // 会话已被销毁（如拖出窗口后关闭）——覆盖层展示；restart 清登记表后重建
+      sessionClosed.value = true;
+    } else {
+      console.error("[terminal] boot failed:", err);
+      loadError.value = String(err);
+    }
   }
 }
 
@@ -186,10 +195,14 @@ defineExpose({ focus, restart });
     </div>
     <template v-else>
       <div ref="host" class="host" />
-      <div v-if="exited" class="overlay">
-        <span class="overlay-text">
-          {{ exitCode == null ? t("terminal.exitedNoCode") : t("terminal.exited", { code: exitCode }) }}
-        </span>
+      <div v-if="exited || sessionClosed" class="overlay">
+        <span class="overlay-text">{{
+          sessionClosed
+            ? t("terminal.sessionClosed")
+            : exitCode == null
+              ? t("terminal.exitedNoCode")
+              : t("terminal.exited", { code: exitCode })
+        }}</span>
         <AppButton v-if="!attachOnly" variant="ghost" type="button" @click="restart">
           {{ t("terminal.restart") }}
         </AppButton>

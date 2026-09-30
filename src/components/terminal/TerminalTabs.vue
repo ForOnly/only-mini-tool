@@ -83,19 +83,24 @@ async function closeTab(tab: TabDef) {
   }
 }
 
-/** 拖出用：全部标签的会话 id（attachOnly 直取；创建型查登记表，
+/** 拖出用：全部标签的会话 id 与标题（attachOnly 直取；创建型查登记表，
  *  TerminalView 首挂载完成前该标签跳过——调用方在挂载后取）。 */
-function sessionIds(): string[] {
+function sessionsPayload(): { ids: string[]; titles: string[] } {
   const ids: string[] = [];
+  const titles: string[] = [];
   for (const tab of tabs.value) {
     if (tab.attachId) {
       ids.push(tab.attachId);
+      titles.push(tab.title);
     } else {
       const state = getSession(tab.key);
-      if (state) ids.push(state.id);
+      if (state) {
+        ids.push(state.id);
+        titles.push(tab.title);
+      }
     }
   }
-  return ids;
+  return { ids, titles };
 }
 
 onMounted(() => {
@@ -108,7 +113,7 @@ onMounted(() => {
   });
 });
 
-defineExpose({ addSession, newTab, sessionIds, activeKey });
+defineExpose({ addSession, newTab, sessionsPayload, activeKey });
 </script>
 
 <template>
