@@ -161,14 +161,17 @@ function registerProviders(m: MonacoModule, onError: (err: unknown) => void) {
       ];
     },
   });
-  console.debug("[monaco] providers registered: params+keywords+format");
+  console.info("[monaco] providers registered: params+keywords+format");
 }
 
-/** 懒加载 monaco（裁剪入口：editor.api + 仅 python 语言贡献——css/html/json/ts 语言块不进产物）。 */
+/** 懒加载 monaco（裁剪入口：editor.api + editor.all 贡献集 + 仅 python 语言贡献——
+ * css/html/json/ts 语言块不进产物。editor.api 只导出 API 不注册 contrib：
+ * suggest 弹窗/format 动作/右键菜单/find 全靠 editor.all）。 */
 async function loadMonaco(): Promise<MonacoModule> {
   if (monaco) return monaco;
   const [m] = await Promise.all([
     import("monaco-editor/esm/vs/editor/editor.api"),
+    import("monaco-editor/esm/vs/editor/editor.all.js"),
     import("monaco-editor/esm/vs/basic-languages/python/python.contribution"),
   ]);
   monaco = m as MonacoModule;
