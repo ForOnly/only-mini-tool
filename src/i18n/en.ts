@@ -187,7 +187,6 @@ export default {
     venvInstallRun: "Install",
     venvInstalling: "Installing… (no cancel, up to 10 min)",
     venvInstallDone: "Dependencies installed",
-    venvOpenTerminal: "Open terminal",
     venvDeleteTitle: "Delete virtual environment?",
     venvDeleteMessage: "This removes the full directory of \"{name}\" — irreversible.",
     venvBind: "Virtual environment",

@@ -13,7 +13,6 @@ import {
   getScriptsSettings,
   installScriptVenvPackages,
   listScriptVenvs,
-  openScriptVenvTerminal,
   saveScriptsSettings,
 } from "@/api/scripts";
 import { setSetting } from "@/api/settings";
@@ -205,14 +204,6 @@ async function onInstall() {
   }
 }
 
-async function onOpenTerminal(name: string) {
-  try {
-    await openScriptVenvTerminal(name);
-  } catch (err) {
-    report(err);
-  }
-}
-
 onMounted(() => {
   void load().catch(report);
 });
@@ -302,9 +293,6 @@ onMounted(() => {
           <div class="row venv-actions">
             <AppButton variant="ghost" type="button" @click="toggleInstall(v.name)">
               {{ t("scripts.venvInstall") }}
-            </AppButton>
-            <AppButton variant="ghost" type="button" @click="onOpenTerminal(v.name)">
-              {{ t("scripts.venvOpenTerminal") }}
             </AppButton>
             <AppButton
               v-if="!v.workspace"

@@ -258,15 +258,6 @@ pub async fn install_script_venv_packages(
 }
 
 #[tauri::command]
-pub async fn open_script_venv_terminal(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), AppError> {
-    ScriptsService::open_venv_terminal(&app, &state.db, &name).await
-}
-
-#[tauri::command]
 pub async fn format_script_code(
     app: AppHandle,
     state: State<'_, AppState>,

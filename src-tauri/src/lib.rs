@@ -67,7 +67,6 @@ pub fn run() {
             commands::list_script_venvs,
             commands::delete_script_venv,
             commands::install_script_venv_packages,
-            commands::open_script_venv_terminal,
             commands::format_script_code,
         ])
         .run(tauri::generate_context!())

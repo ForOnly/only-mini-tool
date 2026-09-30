@@ -182,7 +182,6 @@ export default {
     venvInstallRun: "安装",
     venvInstalling: "安装中…（无取消，最长 10 分钟）",
     venvInstallDone: "依赖安装完成",
-    venvOpenTerminal: "在终端打开",
     venvDeleteTitle: "删除虚拟环境？",
     venvDeleteMessage: "将删除「{name}」的完整目录，不可恢复。",
     venvBind: "虚拟环境",

@@ -14,8 +14,6 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use serde_json::Value;
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -383,42 +381,6 @@ impl ScriptsService {
             cancelled: outcome.cancelled,
             command,
         })
-    }
-
-    /// 在新终端窗口打开并激活指定 venv（逃生舱：完整 pip/交互操作）。
-    /// `name == ".venv"` → 默认 workspace；否则托管命名 venv。
-    /// 只开窗口不执行任务，不走 runner/单飞。
-    pub async fn open_venv_terminal(
-        app: &AppHandle,
-        db: &Database,
-        name: &str,
-    ) -> Result<(), AppError> {
-        let name = normalize_venv_ref(name)?;
-        let venv = require_venv_root(app, db, &name).await?;
-        #[cfg(windows)]
-        {
-            const CREATE_NEW_CONSOLE: u32 = 0x0010_0000;
-            let activate = venv.join("Scripts").join("activate.bat");
-            // /K 保持窗口；call + 引号兼容路径空格
-            let _ = std::process::Command::new("cmd")
-                .args(["/K", &format!("call \"{}\"", activate.display())])
-                .creation_flags(CREATE_NEW_CONSOLE)
-                .spawn();
-            Ok(())
-        }
-        #[cfg(unix)]
-        {
-            let activate = venv.join("bin").join("activate");
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".into());
-            let _ = std::process::Command::new(shell)
-                .arg("-c")
-                .arg(format!(
-                    "source \"{}\"; exec \"$SHELL\"",
-                    activate.display()
-                ))
-                .spawn();
-            Ok(())
-        }
     }
 
     /// 在全局默认 workspace 创建 `.venv`（复用执行内核，与脚本运行共享单飞）。
