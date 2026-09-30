@@ -216,21 +216,232 @@ pub fn ensure_stdio_utf8(env: &mut HashMap<String, String>) {
     }
 }
 
-/// 临时脚本守卫：写 `run-{uuid}.py` 至 run_dir，Drop 时删除（含 Err 路径）。
+/// 生成参数模块文件名（固定名：应用专属前缀防用户脚本模块冲突；单飞保证无并发碰撞）。
+pub const PARAMS_MODULE_FILE: &str = "onlytool_params.py";
+/// 参数模块导入名（去 .py）。
+pub const PARAMS_MODULE_NAME: &str = "onlytool_params";
+
+/// Python 关键字（codegen 字段名 + schema 保存校验共用）。
+pub fn is_python_keyword(word: &str) -> bool {
+    matches!(
+        word,
+        "False"
+            | "None"
+            | "True"
+            | "and"
+            | "as"
+            | "assert"
+            | "async"
+            | "await"
+            | "break"
+            | "class"
+            | "continue"
+            | "def"
+            | "del"
+            | "elif"
+            | "else"
+            | "except"
+            | "finally"
+            | "for"
+            | "from"
+            | "global"
+            | "if"
+            | "import"
+            | "in"
+            | "is"
+            | "lambda"
+            | "nonlocal"
+            | "not"
+            | "or"
+            | "pass"
+            | "raise"
+            | "return"
+            | "try"
+            | "while"
+            | "with"
+            | "yield"
+    )
+}
+
+/// Python 字符串字面量转义：`\ " \n \r \t` 与控制字符（\xNN）。
+fn py_escape(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 2);
+    out.push('"');
+    for c in raw.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\x{:02x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// 参数值的 Python 表达式（按 schema 类型）：
+/// string/select/path → 字符串字面量（path 包 `Path(...)`）；
+/// number → 整数优先 `int`，否则 `float`，NaN/Inf 特判 `float("nan")` 防 NameError；
+/// boolean → True/False。
+fn py_value_expr(def: &ScriptParamDef, raw: &str) -> String {
+    match def.param_type {
+        ScriptParamType::Boolean => {
+            if is_truthy(raw) {
+                "True".into()
+            } else {
+                "False".into()
+            }
+        }
+        ScriptParamType::Number => {
+            let trimmed = raw.trim();
+            if trimmed.parse::<i64>().is_ok() {
+                trimmed.to_string()
+            } else if let Ok(f) = trimmed.parse::<f64>() {
+                if f.is_nan() {
+                    "float(\"nan\")".to_string()
+                } else if f.is_infinite() {
+                    if f > 0.0 {
+                        "float(\"inf\")".to_string()
+                    } else {
+                        "float(\"-inf\")".to_string()
+                    }
+                } else {
+                    format!("{f}")
+                }
+            } else {
+                // 校验后不可达；防御性回退字符串
+                py_escape(raw)
+            }
+        }
+        ScriptParamType::Path => format!("Path({})", py_escape(raw)),
+        _ => py_escape(raw),
+    }
+}
+
+/// dataclass 字段的 Python 类型标注表达式。
+fn py_type_expr(def: &ScriptParamDef) -> String {
+    match def.param_type {
+        ScriptParamType::String | ScriptParamType::Path => {
+            if matches!(def.param_type, ScriptParamType::Path) {
+                "Path".to_string()
+            } else {
+                "str".to_string()
+            }
+        }
+        ScriptParamType::Number => "Union[int, float]".to_string(),
+        ScriptParamType::Boolean => "bool".to_string(),
+        ScriptParamType::Select => {
+            let opts: Vec<String> = def.options.iter().map(|o| py_escape(o)).collect();
+            format!("Literal[{}]", opts.join(", "))
+        }
+    }
+}
+
+/// 生成参数模块源码：schema → frozen dataclass `Params` + 预填实例 `params`。
+/// 脚本同目录运行时 Python 自动加入 `sys.path[0]`，`from onlytool_params import params` 即用。
+pub fn render_params_module(
+    schema: &[ScriptParamDef],
+    effective: &HashMap<String, String>,
+) -> String {
+    // required 无默认在前、optional 带默认在后（dataclass 字段序约束）
+    let mut ordered: Vec<&ScriptParamDef> = schema.iter().collect();
+    ordered.sort_by_key(|d| d.required == false);
+
+    let mut needs_literal = false;
+    let mut class_fields = String::new();
+    let mut ctor_args = String::new();
+
+    for def in ordered {
+        // Python 关键字 key 追加 `_`（保存校验会拒绝新关键字 key，存量防御）
+        let field_name = if is_python_keyword(&def.key) {
+            format!("{}_", def.key)
+        } else {
+            def.key.clone()
+        };
+        if matches!(def.param_type, ScriptParamType::Select) {
+            needs_literal = true;
+        }
+        let value = effective.get(&def.key).cloned().unwrap_or_default();
+        let value_expr = py_value_expr(def, &value);
+
+        if def.required {
+            class_fields.push_str(&format!("    {}: {}\n", field_name, py_type_expr(def)));
+        } else {
+            class_fields.push_str(&format!(
+                "    {}: {} = {}\n",
+                field_name,
+                py_type_expr(def),
+                py_value_expr(def, def.default_value.as_deref().unwrap_or(""))
+            ));
+        }
+        ctor_args.push_str(&format!("    {}={},\n", field_name, value_expr));
+    }
+
+    let typing_import = if needs_literal {
+        "from typing import Literal, Union"
+    } else {
+        "from typing import Union"
+    };
+    // 空 schema 也生成合法模块（空类体需 pass）
+    let class_body = if class_fields.is_empty() {
+        "    pass".to_string()
+    } else {
+        class_fields
+    };
+
+    format!(
+        r#"# 由 only-mini-tool 运行时生成，勿手改（参数 schema → dataclass + 本次运行实例）。
+# 用法：from onlytool_params import params
+# 注意：args_template.before 含 -c/-m/-I 等改变 sys.path[0] 语义的参数时本模块不可用。
+from dataclasses import dataclass
+{typing_import}
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Params:
+{class_body}
+
+params = Params(
+{ctor_args})
+"#
+    )
+}
+
+/// 临时脚本守卫：写 `run-{uuid}.py` + `onlytool_params.py` 至 run_dir，Drop 时一并删除。
 /// 正常路径随 guard drop 删除；app 崩溃残留由下次运行前的孤儿清理兜底。
 pub struct TempScriptGuard {
     path: PathBuf,
+    params_module_path: PathBuf,
 }
 
 impl TempScriptGuard {
-    pub async fn create(run_dir: &Path, body: &str) -> Result<Self, AppError> {
+    pub async fn create(
+        run_dir: &Path,
+        body: &str,
+        params_module_src: &str,
+    ) -> Result<Self, AppError> {
         let path = run_dir.join(format!("run-{}.py", Uuid::new_v4()));
         tokio::fs::write(&path, body.as_bytes())
             .await
             .map_err(|e| AppError::InternalError {
                 message: format!("write temp script: {e}"),
             })?;
-        Ok(TempScriptGuard { path })
+        let params_module_path = run_dir.join(PARAMS_MODULE_FILE);
+        tokio::fs::write(&params_module_path, params_module_src.as_bytes())
+            .await
+            .map_err(|e| AppError::InternalError {
+                message: format!("write params module: {e}"),
+            })?;
+        Ok(TempScriptGuard {
+            path,
+            params_module_path,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -242,6 +453,7 @@ impl Drop for TempScriptGuard {
     fn drop(&mut self) {
         // Drop 不能 await；同步删除，失败无害（孤儿清理兜底）
         let _ = std::fs::remove_file(&self.path);
+        let _ = std::fs::remove_file(&self.params_module_path);
     }
 }
 
@@ -462,13 +674,100 @@ mod tests {
     async fn temp_script_guard_creates_and_removes() {
         let dir = std::env::temp_dir().join(format!("omt-guard-test-{}", Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
-        let path = {
-            let guard = TempScriptGuard::create(&dir, "print(1)").await.unwrap();
+        let (path, module_path) = {
+            let guard = TempScriptGuard::create(&dir, "print(1)", "# params")
+                .await
+                .unwrap();
             let p = guard.path().to_path_buf();
+            let m = dir.join(PARAMS_MODULE_FILE);
             assert!(p.exists());
-            p
+            assert!(m.exists(), "params module must be written alongside");
+            (p, m)
         };
         assert!(!path.exists(), "guard drop must remove temp script");
+        assert!(
+            !module_path.exists(),
+            "guard drop must remove params module"
+        );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_params_module_full_shape() {
+        let mut name = def("name", ScriptParamType::String, ScriptParamPassAs::Env);
+        name.required = true;
+        let mut limit = def("limit", ScriptParamType::Number, ScriptParamPassAs::Stdin);
+        limit.default_value = Some("10".into());
+        let mut mode = def("mode", ScriptParamType::Select, ScriptParamPassAs::Env);
+        mode.default_value = Some("a".into());
+        mode.options = vec!["a".into(), "b".into()];
+        let mut debug = def("debug", ScriptParamType::Boolean, ScriptParamPassAs::Env);
+        debug.default_value = Some("false".into());
+        let mut input = def("input", ScriptParamType::Path, ScriptParamPassAs::Arg);
+        input.default_value = Some("".into());
+
+        let effective = HashMap::from([
+            ("name".to_string(), "hi \"q\"\\\n".to_string()),
+            ("limit".to_string(), "42".to_string()),
+            ("mode".to_string(), "b".to_string()),
+            ("debug".to_string(), "true".to_string()),
+            ("input".to_string(), "D:/ws/a.txt".to_string()),
+        ]);
+        let src = render_params_module(&[name, limit, mode, debug, input], &effective);
+
+        // required 无默认在前
+        let name_pos = src.find("    name: str").unwrap();
+        let limit_pos = src.find("    limit: Union[int, float] = 10").unwrap();
+        assert!(name_pos < limit_pos, "required field must come first");
+        // 类型映射与转义
+        assert!(src.contains("    mode: Literal[\"a\", \"b\"] = \"a\""));
+        assert!(src.contains("    debug: bool = False"));
+        assert!(src.contains("    input: Path = Path(\"\")"));
+        // 实例值：转义（\" \\ \n）、int、Literal 值、True、Path 包裹
+        assert!(src.contains("    name=\"hi \\\"q\\\"\\\\\\n\","));
+        assert!(src.contains("    limit=42,"));
+        assert!(src.contains("    mode=\"b\","));
+        assert!(src.contains("    debug=True,"));
+        assert!(src.contains("    input=Path(\"D:/ws/a.txt\"),"));
+        // 头部契约与 frozen
+        assert!(src.contains("from onlytool_params import params"));
+        assert!(src.contains("@dataclass(frozen=True)"));
+        assert!(src.contains("from typing import Literal, Union"));
+    }
+
+    #[test]
+    fn render_params_module_edge_cases() {
+        // 空 schema：空 dataclass（pass）+ 空实例，import 不炸
+        let src = render_params_module(&[], &HashMap::new());
+        assert!(src.contains("class Params:\n    pass\n"));
+        assert!(src.contains("params = Params("));
+        assert!(src.contains("from typing import Union"));
+
+        // number NaN/Inf 特判
+        let mut n = def("n", ScriptParamType::Number, ScriptParamPassAs::Env);
+        n.default_value = Some("0".into());
+        let src = render_params_module(
+            &[n.clone()],
+            &HashMap::from([("n".to_string(), "nan".to_string())]),
+        );
+        assert!(src.contains("    n=float(\"nan\"),"));
+        let src = render_params_module(
+            &[n.clone()],
+            &HashMap::from([("n".to_string(), "-inf".to_string())]),
+        );
+        assert!(src.contains("    n=float(\"-inf\"),"));
+        // 小数
+        let src =
+            render_params_module(&[n], &HashMap::from([("n".to_string(), "2.5".to_string())]));
+        assert!(src.contains("    n=2.5,"));
+
+        // Python 关键字 key（存量防御）：字段名追加 _
+        let kw = def("class", ScriptParamType::String, ScriptParamPassAs::Env);
+        let src = render_params_module(
+            &[kw],
+            &HashMap::from([("class".to_string(), "x".to_string())]),
+        );
+        assert!(src.contains("    class_: str"));
+        assert!(src.contains("    class_=\"x\","));
     }
 }

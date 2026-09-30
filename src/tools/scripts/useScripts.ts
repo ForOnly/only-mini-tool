@@ -14,7 +14,7 @@ import {
 export type ScriptsPage = "list" | "editor";
 
 /** 新建脚本模板：body 内注释即脚本作者契约（传参方式速查）。 */
-export type ScriptTemplate = "argparse" | "env" | "stdin" | "blank";
+export type ScriptTemplate = "argparse" | "env" | "stdin" | "paramsModule" | "blank";
 
 export const SCRIPT_TEMPLATES: Record<ScriptTemplate, string> = {
   argparse: `import argparse
@@ -44,6 +44,13 @@ limit = params.get("limit", 10)
 debug = params.get("flag", False)
 
 print("limit =", limit, "debug =", debug)
+`,
+  paramsModule: `from onlytool_params import params
+
+# 参数模块（推荐）：工具按 schema 生成 dataclass 实例，import 即用——
+# 类型原生（int/float/bool/Path/Literal），免手动取参。
+print("name =", params.name)
+print("types:", type(params.limit), type(params.debug))
 `,
   blank: 'print("hello from only-mini-tool")\n',
 };

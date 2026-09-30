@@ -619,7 +619,9 @@ impl ScriptsService {
                 message: format!("create scripts run dir: {e}"),
             })?;
         cleanup_orphan_run_scripts(&run_dir).await;
-        let guard = TempScriptGuard::create(&run_dir, &script.body).await?;
+        // 参数模块：schema → dataclass + 本次运行实例（脚本同目录，sys.path[0] 直达）
+        let params_module_src = prepare::render_params_module(&script.params_schema, &effective);
+        let guard = TempScriptGuard::create(&run_dir, &script.body, &params_module_src).await?;
 
         let process_env: HashMap<String, String> = std::env::vars().collect();
         let mut env = prepare::merge_env(process_env, &settings.env, &script.env, &projected.envs);
@@ -754,7 +756,9 @@ async fn cleanup_orphan_run_scripts(run_dir: &Path) {
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.starts_with("run-") && name.ends_with(".py") {
+        let is_orphan = (name.starts_with("run-") && name.ends_with(".py"))
+            || name == prepare::PARAMS_MODULE_FILE;
+        if is_orphan {
             let _ = tokio::fs::remove_file(entry.path()).await;
         }
     }

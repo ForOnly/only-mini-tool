@@ -147,6 +147,8 @@ export default {
     noParams: "未定义参数。",
     logTitle: "运行日志",
     logEmpty: "尚未运行。",
+    logResize: "调节日志面板高度",
+    leftResize: "调节左栏宽度",
     runRunning: "运行中…",
     runCancelled: "已取消",
     exitCode: "退出码：{code}",
@@ -196,6 +198,7 @@ export default {
     templateArgparse: "argparse 参数",
     templateEnv: "环境变量",
     templateStdin: "stdin JSON",
+    templateParamsModule: "参数模块（推荐）",
   },
   errors: {
     unknown: "未知错误",

@@ -149,6 +149,8 @@ export default {
     noParams: "No parameters defined.",
     logTitle: "Run log",
     logEmpty: "Not run yet.",
+    logResize: "Resize log panel height",
+    leftResize: "Resize left panel width",
     runRunning: "Running…",
     runCancelled: "Cancelled",
     exitCode: "Exit code: {code}",
@@ -202,6 +204,7 @@ export default {
     templateArgparse: "argparse params",
     templateEnv: "Environment variables",
     templateStdin: "stdin JSON",
+    templateParamsModule: "params module (recommended)",
   },
   errors: {
     unknown: "Unknown error",

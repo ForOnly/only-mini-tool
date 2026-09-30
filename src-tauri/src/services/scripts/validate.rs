@@ -89,6 +89,12 @@ pub fn validate_params_schema(schema: &[ScriptParamDef]) -> Result<(), AppError>
                 ),
             });
         }
+        // Python 关键字拒绝（参数模块 dataclass 字段名合法性；存量数据防御性 codegen 加 _）
+        if super::prepare::is_python_keyword(key) {
+            return Err(AppError::ValidationError {
+                message: format!("param key \"{key}\" is a Python keyword"),
+            });
+        }
         if !keys.insert(key.to_string()) {
             return Err(AppError::ValidationError {
                 message: format!("duplicate param key: {key}"),

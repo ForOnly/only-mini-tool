@@ -28,6 +28,7 @@ const TEMPLATE_OPTIONS: { value: ScriptTemplate; labelKey: string }[] = [
   { value: "argparse", labelKey: "scripts.templateArgparse" },
   { value: "env", labelKey: "scripts.templateEnv" },
   { value: "stdin", labelKey: "scripts.templateStdin" },
+  { value: "paramsModule", labelKey: "scripts.templateParamsModule" },
   { value: "blank", labelKey: "scripts.templateBlank" },
 ];
 
