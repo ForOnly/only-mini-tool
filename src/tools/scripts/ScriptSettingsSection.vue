@@ -429,7 +429,7 @@ onBeforeUnmount(() => {
 }
 
 .terminal-area-body {
-  height: 280px;
+  height: 320px;
   min-height: 0;
 }
 

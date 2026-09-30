@@ -67,6 +67,8 @@
   --text: #0f172a;
   --text-muted: #64748b;
   --border: #cbd5e1;
+  /* 终端专属底色（浅色与 surface 一致；深色比 surface 深一档拉开层次） */
+  --terminal-bg: #ffffff;
 }
 
 html[data-scheme="light"] {
@@ -78,6 +80,7 @@ html[data-scheme="light"] {
   --text: #0f172a;
   --text-muted: #64748b;
   --border: #cbd5e1;
+  --terminal-bg: #ffffff;
 }
 
 html[data-scheme="dark"] {
@@ -90,6 +93,7 @@ html[data-scheme="dark"] {
   --text-muted: #94a3b8;
   --border: #475569;
   --warning: #fbbf24;
+  --terminal-bg: #0b1220;
   --shadow-panel: 0 8px 24px color-mix(in srgb, #000 40%, transparent);
   --shadow-menu: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
   --shadow-message: 0 10px 28px color-mix(in srgb, #000 45%, transparent);
@@ -106,6 +110,7 @@ html[data-scheme="dark"] {
     --text-muted: #94a3b8;
     --border: #475569;
     --warning: #fbbf24;
+    --terminal-bg: #0b1220;
     --shadow-panel: 0 8px 24px color-mix(in srgb, #000 40%, transparent);
     --shadow-menu: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
     --shadow-message: 0 10px 28px color-mix(in srgb, #000 45%, transparent);

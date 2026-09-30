@@ -6,6 +6,7 @@
 import { ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
+import AppTab from "@/components/common/AppTab.vue";
 import ScriptLogPanel from "@/tools/scripts/ScriptLogPanel.vue";
 import ScriptTerminalPane from "@/tools/scripts/ScriptTerminalPane.vue";
 import { usePanelResize } from "@/tools/scripts/usePanelResize";
@@ -25,7 +26,7 @@ defineProps<{
 const { t } = useI18n();
 
 const STORAGE_KEY = "scripts.logPanelHeight";
-const MIN_HEIGHT = 96;
+const MIN_HEIGHT = 112;
 const MAX_HEIGHT = 420;
 /** 编辑区（Monaco + RunBar）的最小保护高度——拖拽/窗口收缩均不可侵占 */
 const MIN_EDITOR_AREA = 200;
@@ -85,26 +86,12 @@ const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelRes
     />
     <header class="head">
       <div class="tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          class="tab"
-          :class="{ active: activeTab === 'log' }"
-          :aria-selected="activeTab === 'log'"
-          @click="activeTab = 'log'"
-        >
+        <AppTab :active="activeTab === 'log'" @select="activeTab = 'log'">
           {{ t("scripts.logTitle") }}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          class="tab"
-          :class="{ active: activeTab === 'terminal' }"
-          :aria-selected="activeTab === 'terminal'"
-          @click="activeTab = 'terminal'"
-        >
+        </AppTab>
+        <AppTab :active="activeTab === 'terminal'" @select="activeTab = 'terminal'">
           {{ t("terminal.tabTitle") }}
-        </button>
+        </AppTab>
       </div>
       <span
         v-if="statusText"
@@ -129,7 +116,7 @@ const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelRes
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  min-height: 96px;
+  min-height: 112px;
   border-top: 1px solid var(--border);
   background: var(--surface);
 }
@@ -169,26 +156,6 @@ const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelRes
   display: flex;
   align-items: center;
   gap: var(--space-1);
-}
-
-.tab {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  padding: 5px var(--space-2);
-  cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
 }
 
 /* 宽防计时器位数增长回流；dirty 警示色 */

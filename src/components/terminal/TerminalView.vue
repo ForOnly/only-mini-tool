@@ -208,7 +208,10 @@ async function boot() {
     const terminal = new bundle.Terminal({
       scrollback: 2000,
       fontSize: 13,
-      fontFamily: "var(--font-mono, ui-monospace, monospace)",
+      lineHeight: 1.25,
+      // 字面量字体栈：CSS var 在 xterm 字形量测下不可靠，且 --font-mono 未定义
+      fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace',
+      cursorStyle: "bar",
       cursorBlink: true,
     });
     const fitAddon = new bundle.FitAddon();
@@ -344,7 +347,7 @@ defineExpose({ focus, restart });
   min-height: 0;
   /* padding 在容器层：fit-addon 量测的 .host 不含 padding，列数不再偏大 */
   padding: var(--space-2);
-  background: var(--surface);
+  background: var(--terminal-bg);
 }
 
 .host {

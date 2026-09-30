@@ -102,8 +102,8 @@ async function copyCommand() {
   min-height: 0;
   overflow: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 12.5px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }

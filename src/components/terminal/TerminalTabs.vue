@@ -7,6 +7,7 @@ import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
+import AppTab from "@/components/common/AppTab.vue";
 import TerminalView from "@/components/terminal/TerminalView.vue";
 import { useTerminalSessions } from "@/components/terminal/useTerminalSessions";
 import type { TerminalCreatePayload } from "@/api/types";
@@ -140,28 +141,17 @@ defineExpose({ addSession, newTab, disposeAllTabs, releaseAllTabs, sessionsPaylo
 <template>
   <div class="terminal-tabs">
     <div class="tabbar" role="tablist">
-      <button
+      <AppTab
         v-for="tab in tabs"
         :key="tab.key"
-        type="button"
-        role="tab"
-        class="tab"
-        :class="{ active: tab.key === activeKey }"
-        :aria-selected="tab.key === activeKey"
-        @click="activeKey = tab.key"
+        :active="tab.key === activeKey"
+        @select="activeKey = tab.key"
+        @close="closeTab(tab)"
       >
-        <span class="tab-title">{{ tab.title }}</span>
-        <span
-          v-if="tab.venv"
-          class="tab-venv"
-        >{{ tab.venv }}</span>
-        <span
-          class="tab-close"
-          role="button"
-          :aria-label="t('terminal.close')"
-          @click.stop="closeTab(tab)"
-        >×</span>
-      </button>
+        {{ tab.title }}
+        <template v-if="tab.venv" #badge>{{ tab.venv }}</template>
+        <template #close>×</template>
+      </AppTab>
       <AppButton variant="ghost" type="button" class="new-tab" @click="newTab">
         {{ t("terminal.newTab") }}
       </AppButton>
@@ -202,54 +192,6 @@ defineExpose({ addSession, newTab, disposeAllTabs, releaseAllTabs, sessionsPaylo
 
 .tabbar::-webkit-scrollbar {
   display: none;
-}
-
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  padding: 4px var(--space-2);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
-.tab-venv {
-  font-size: var(--text-xs, 12px);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-radius: var(--radius);
-  padding: 0 4px;
-}
-
-.tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: var(--radius);
-  font-size: 13px;
-  line-height: 1;
-  color: var(--text-muted);
-}
-
-.tab-close:hover {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
-  color: var(--danger);
 }
 
 .new-tab {

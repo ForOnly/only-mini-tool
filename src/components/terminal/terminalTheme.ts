@@ -15,7 +15,7 @@ function token(name: string): string {
 function palette(scheme: ColorScheme): ITheme {
   if (scheme === "dark") {
     return {
-      background: token("--surface"),
+      background: token("--terminal-bg"),
       foreground: token("--text"),
       cursor: token("--accent"),
       cursorAccent: token("--on-accent"),
@@ -39,7 +39,7 @@ function palette(scheme: ColorScheme): ITheme {
     };
   }
   return {
-    background: token("--surface"),
+    background: token("--terminal-bg"),
     foreground: token("--text"),
     cursor: token("--accent"),
     cursorAccent: token("--on-accent"),
