@@ -133,7 +133,11 @@ pub fn encode_ps_bootstrap(venv_name: Option<&str>) -> String {
 }
 
 /// 全量继承当前进程环境，再叠加覆盖项（显式继承不依赖 CommandBuilder 的默认语义）。
-pub fn build_command(spawn: &ShellSpawn, cwd: &Path, env_overlay: &HashMap<String, String>) -> CommandBuilder {
+pub fn build_command(
+    spawn: &ShellSpawn,
+    cwd: &Path,
+    env_overlay: &HashMap<String, String>,
+) -> CommandBuilder {
     let mut cmd = CommandBuilder::new(&spawn.program);
     for arg in &spawn.args {
         cmd.arg(arg);
@@ -175,7 +179,10 @@ pub fn venv_env_with_path(
         base_path.to_string_lossy()
     );
     HashMap::from([
-        ("VIRTUAL_ENV".to_string(), venv_root.to_string_lossy().into_owned()),
+        (
+            "VIRTUAL_ENV".to_string(),
+            venv_root.to_string_lossy().into_owned(),
+        ),
         ("PATH".to_string(), path),
         ("PYTHONUTF8".to_string(), "1".to_string()),
         // cmd 启动时读取 PROMPT 环境变量；PowerShell 忽略之（其提示符走 prompt 函数）
@@ -228,7 +235,9 @@ mod tests {
         let cmd = spawn_command(&ShellKind::Cmd, Some("dev"));
         assert_eq!(cmd.args, vec!["/k", "@chcp 65001>nul"]);
         // custom 不注入
-        assert!(spawn_command(&ShellKind::Custom(PathBuf::from("sh")), None).args.is_empty());
+        assert!(spawn_command(&ShellKind::Custom(PathBuf::from("sh")), None)
+            .args
+            .is_empty());
     }
 
     #[test]

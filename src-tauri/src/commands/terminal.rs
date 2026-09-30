@@ -3,9 +3,7 @@
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 
-use crate::domain::{
-    ScriptTerminalConfig, TerminalCreatePayload, TerminalEvent, TerminalInfo,
-};
+use crate::domain::{ScriptTerminalConfig, TerminalCreatePayload, TerminalEvent, TerminalInfo};
 use crate::errors::AppError;
 use crate::services::scripts::ScriptsService;
 use crate::services::terminal::TerminalRegistry;
@@ -90,9 +88,9 @@ pub async fn resolve_script_terminal(
 fn find_session(
     id: &str,
 ) -> Result<std::sync::Arc<crate::services::terminal::TerminalSession>, AppError> {
-    TerminalRegistry::global().get(id).ok_or_else(|| {
-        AppError::TerminalNotFound {
+    TerminalRegistry::global()
+        .get(id)
+        .ok_or_else(|| AppError::TerminalNotFound {
             message: format!("terminal session not found: {id}"),
-        }
-    })
+        })
 }

@@ -88,7 +88,9 @@ pub fn run() {
                 let disposed =
                     services::terminal::TerminalRegistry::global().dispose_owned_by(&label);
                 if disposed > 0 {
-                    tracing::info!("[terminal] disposed {disposed} session(s) owned by window {label}");
+                    tracing::info!(
+                        "[terminal] disposed {disposed} session(s) owned by window {label}"
+                    );
                 }
             }
             // app 退出：杀全部终端会话进程树（防 conhost/shell 残留）

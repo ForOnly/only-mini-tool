@@ -98,9 +98,6 @@ pub use script::{
     ScriptParamType, ScriptPathMode, ScriptRunRequest, ScriptRunResult, ScriptSummary,
     ScriptUpdate, ScriptVenvSummary, ScriptsSettingsBundle, ScriptsSettingsSave,
 };
-pub use terminal::{
-    ScriptTerminalConfig, TerminalCreatePayload, TerminalEvent, TerminalEventKind, TerminalInfo,
-};
 pub use settings::{
     engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
     DEFAULT_OCR_INSPECTOR_PLACEMENT, DEFAULT_OCR_TIMEOUT_MS, DEFAULT_SCRIPTS_ENV_JSON,
@@ -109,6 +106,9 @@ pub use settings::{
     SETTING_OCR_INSPECTOR_PLACEMENT, SETTING_OCR_SETTINGS_VERSION, SETTING_OCR_TIMEOUT_MS,
     SETTING_SCRIPTS_DEFAULT_WORKSPACE, SETTING_SCRIPTS_ENV_JSON, SETTING_SCRIPTS_ENV_PREFIX,
     SETTING_SCRIPTS_PYTHON_PATH, SETTING_SCRIPTS_VENV, SETTING_UI_THEME,
+};
+pub use terminal::{
+    ScriptTerminalConfig, TerminalCreatePayload, TerminalEvent, TerminalEventKind, TerminalInfo,
 };
 
 pub fn export_all_ts(out_dir: &std::path::Path) {

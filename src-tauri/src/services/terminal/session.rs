@@ -126,9 +126,11 @@ impl TerminalSession {
             pixel_width: 0,
             pixel_height: 0,
         };
-        let pair = pty_system.openpty(size).map_err(|e| AppError::TerminalSpawn {
-            message: format!("open pty: {e}"),
-        })?;
+        let pair = pty_system
+            .openpty(size)
+            .map_err(|e| AppError::TerminalSpawn {
+                message: format!("open pty: {e}"),
+            })?;
         let cmd = super::shell::build_command(
             &shell::ShellSpawn {
                 program: cfg.program.clone(),
@@ -137,16 +139,19 @@ impl TerminalSession {
             &cfg.cwd,
             &cfg.env_overlay,
         );
-        let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
-            AppError::TerminalSpawn {
+        let mut child = pair
+            .slave
+            .spawn_command(cmd)
+            .map_err(|e| AppError::TerminalSpawn {
                 message: format!("spawn shell {}: {e}", cfg.program.display()),
-            }
-        })?;
+            })?;
         let child_pid = child.process_id();
         let master = pair.master;
-        let reader = master.try_clone_reader().map_err(|e| AppError::TerminalSpawn {
-            message: format!("clone pty reader: {e}"),
-        })?;
+        let reader = master
+            .try_clone_reader()
+            .map_err(|e| AppError::TerminalSpawn {
+                message: format!("clone pty reader: {e}"),
+            })?;
         let writer = master.take_writer().map_err(|e| AppError::TerminalSpawn {
             message: format!("take pty writer: {e}"),
         })?;

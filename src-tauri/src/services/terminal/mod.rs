@@ -280,7 +280,11 @@ mod tests {
         state.reserved = 0;
         for _ in 0..MAX_SESSIONS {
             let session = TerminalSession::spawn(SessionSpawn {
-                program: if cfg!(windows) { "cmd.exe".into() } else { "/bin/sh".into() },
+                program: if cfg!(windows) {
+                    "cmd.exe".into()
+                } else {
+                    "/bin/sh".into()
+                },
                 args: vec![],
                 cwd: std::env::temp_dir(),
                 env_overlay: Default::default(),
@@ -300,6 +304,9 @@ mod tests {
                 },
             );
         }
-        assert!(try_reserve(&mut state).is_err(), "map count also enforces limit");
+        assert!(
+            try_reserve(&mut state).is_err(),
+            "map count also enforces limit"
+        );
     }
 }

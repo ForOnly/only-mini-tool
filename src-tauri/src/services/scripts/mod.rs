@@ -211,11 +211,9 @@ impl ScriptsService {
             .kill_on_drop(true);
         // GUI 父进程必加：抑制 console 分配（0xC0000142 根因 + 闪窗）
         crate::infrastructure::process::no_window(&mut spawn_cmd);
-        let mut child = spawn_cmd
-            .spawn()
-            .map_err(|e| AppError::InternalError {
-                message: format!("start python for black ({interpreter}): {e}"),
-            })?;
+        let mut child = spawn_cmd.spawn().map_err(|e| AppError::InternalError {
+            message: format!("start python for black ({interpreter}): {e}"),
+        })?;
         // 写 stdin 后 wait_with_output（30s 超时兜底——spawn + black import 冷启动余量）
         {
             use tokio::io::AsyncWriteExt;
@@ -774,7 +772,11 @@ fn normalize_venv_ref(name: &str) -> Result<String, AppError> {
 
 /// 解析 venv 根目录：`".venv"` = 默认 workspace 下；命名 = `{app_data}/venvs/<name>/`。
 /// 不存在或 workspace 未配置 → ValidationError。
-async fn require_venv_root(app: &AppHandle, db: &Database, name: &str) -> Result<PathBuf, AppError> {
+async fn require_venv_root(
+    app: &AppHandle,
+    db: &Database,
+    name: &str,
+) -> Result<PathBuf, AppError> {
     if name == ".venv" {
         let settings = ScriptsService::get_settings(db)?;
         let ws = settings.default_workspace.trim();

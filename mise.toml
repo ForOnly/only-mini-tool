@@ -35,5 +35,5 @@ description = "bump + git-tag + push（例：mise run release -- patch --git-tag
 run = "node scripts/bump-version.mjs"
 
 [tasks.ci]
-description = "本地对齐 CI：version + FE typecheck + cargo check + gen-types drift"
-run = "npm run check:version && npm run check:fe && cargo check --manifest-path src-tauri/Cargo.toml && npm run check:types"
+description = "本地对齐 CI：version + FE typecheck + cargo fmt/check + gen-types drift"
+run = "npm run check:version && npm run check:fe && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo check --manifest-path src-tauri/Cargo.toml && npm run check:types"

@@ -96,7 +96,12 @@ mod tests {
         // pending 不无限增长。流末恰好停在残缺前导字节上会被合法扣留，
         // 追加一个 ASCII 字节使其终结（真实场景下一 chunk 到来即解）。
         let mut acc = Utf8Accumulator::new();
-        let gbk: Vec<u8> = [0xD6, 0xD0, 0xCE, 0xC4].iter().cycle().copied().take(10_000).collect();
+        let gbk: Vec<u8> = [0xD6, 0xD0, 0xCE, 0xC4]
+            .iter()
+            .cycle()
+            .copied()
+            .take(10_000)
+            .collect();
         let text = acc.push(&gbk);
         assert!(text.chars().count() >= 9_999); // 全部以替换符或合法字节形式出栈
         let tail = acc.push(b"x");
