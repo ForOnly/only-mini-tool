@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppConfirm from "@/components/common/AppConfirm.vue";
@@ -12,6 +12,7 @@ import { listScriptVenvs } from "@/api/scripts";
 import type { ScriptVenvSummary } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { useWorkbench } from "@/composables/useWorkbench";
+import { usePanelResize } from "@/tools/scripts/usePanelResize";
 import { useScriptRun } from "@/tools/scripts/useScriptRun";
 import { useScripts } from "@/tools/scripts/useScripts";
 import { formatAppError } from "@/utils/error";
@@ -19,6 +20,49 @@ import { formatAppError } from "@/utils/error";
 const { t } = useI18n();
 const { success, error } = useMessage();
 const { mainView } = useWorkbench();
+
+/** 左栏宽度：窄窗安全 clamp（min 不大于 max，避免挤爆 Monaco） */
+const LEFT_STORAGE_KEY = "scripts.leftPanelWidth";
+const LEFT_HARD_MIN = 260;
+const LEFT_HARD_MAX = 560;
+const LEFT_SPLITTER_PX = 6;
+const mainEl = ref<HTMLElement | null>(null);
+
+function mainWidth(): number {
+  return mainEl.value?.clientWidth ?? window.innerWidth;
+}
+
+function leftMax(): number {
+  const usable = Math.max(0, mainWidth() - LEFT_SPLITTER_PX);
+  return Math.max(0, Math.min(LEFT_HARD_MAX, Math.floor(usable * 0.45)));
+}
+
+function leftMin(): number {
+  return Math.min(LEFT_HARD_MIN, leftMax());
+}
+
+const {
+  value: leftWidth,
+  dragging: leftDragging,
+  atMax: leftAtMax,
+  onPointerDown: onLeftResizePointerDown,
+  onKeydown: onLeftResizeKeydown,
+  reclamp: reclampLeft,
+} = usePanelResize({
+  storageKey: LEFT_STORAGE_KEY,
+  axis: "x",
+  getMin: leftMin,
+  getMax: leftMax,
+  defaultValue: () => {
+    const usable = Math.max(0, mainWidth() - LEFT_SPLITTER_PX);
+    return Math.min(340, Math.floor(usable * 0.38));
+  },
+});
+
+/** draft 就绪后 .main 才入 DOM，需按实测宽度再 clamp */
+watch(mainEl, (el) => {
+  if (el) void nextTick(() => reclampLeft());
+});
 
 /** 可绑定 venv 列表（命名 venv，供脚本级下拉） */
 const venvs = ref<ScriptVenvSummary[]>([]);
@@ -169,8 +213,8 @@ const statusText = computed(() => {
 
 <template>
   <div v-if="draft" class="editor-page">
-    <div class="main">
-      <aside class="left">
+    <div ref="mainEl" class="main">
+      <aside class="left" :style="{ width: `${leftWidth}px` }">
         <ScriptRunBar
           :dirty="dirty"
           :running="running"
@@ -189,6 +233,19 @@ const statusText = computed(() => {
           />
         </div>
       </aside>
+      <div
+        class="left-splitter"
+        :class="{ dragging: leftDragging, atMax: leftAtMax }"
+        role="separator"
+        aria-orientation="vertical"
+        tabindex="0"
+        :aria-label="t('scripts.leftResize')"
+        :aria-valuenow="leftWidth"
+        :aria-valuemin="leftMin()"
+        :aria-valuemax="leftMax()"
+        @pointerdown="onLeftResizePointerDown"
+        @keydown="onLeftResizeKeydown"
+      />
       <section class="center">
         <ScriptEditor
           :model-value="draft.body"
@@ -234,12 +291,36 @@ const statusText = computed(() => {
 }
 
 .left {
-  width: min(340px, 38%);
-  border-right: 1px solid var(--border);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   background: var(--surface);
+}
+
+/* 竖向分隔条：承担原 .left border-right，避免双线 */
+.left-splitter {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  background: color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.left-splitter:hover,
+.left-splitter:focus-visible,
+.left-splitter.dragging {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.left-splitter.atMax {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .left-scroll {

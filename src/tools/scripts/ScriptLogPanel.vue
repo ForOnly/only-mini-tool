@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppButton from "@/components/common/AppButton.vue";
 import { useMessage } from "@/composables/useMessage";
 import type { ScriptRunResult } from "@/api/types";
+import { usePanelResize } from "@/tools/scripts/usePanelResize";
 
 const props = defineProps<{
   result: ScriptRunResult | null;
@@ -18,24 +19,35 @@ const { t } = useI18n();
 const { success } = useMessage();
 
 const STORAGE_KEY = "scripts.logPanelHeight";
-const TITLEBAR = 32;
 const MIN_HEIGHT = 96;
 const MAX_HEIGHT = 420;
 /** 编辑区（Monaco + RunBar）的最小保护高度——拖拽/窗口收缩均不可侵占 */
 const MIN_EDITOR_AREA = 200;
+const TITLEBAR_FALLBACK = 32;
 
-const height = ref(clamp(Number(localStorage.getItem(STORAGE_KEY) || 160)));
-const dragging = ref(false);
+const rootEl = ref<HTMLElement | null>(null);
 
-/** 上限随窗口高度动态收缩：小窗下拖满也不把 Monaco 压成一条线 */
-function maxHeight() {
-  const stage = window.innerHeight - TITLEBAR;
-  return Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, stage - MIN_EDITOR_AREA));
+function parentHeight(): number {
+  const parent = rootEl.value?.parentElement;
+  if (parent && parent.clientHeight > 0) return parent.clientHeight;
+  return Math.max(0, window.innerHeight - TITLEBAR_FALLBACK);
 }
 
-function clamp(value: number) {
-  return Math.min(maxHeight(), Math.max(MIN_HEIGHT, value));
+function getMin() {
+  return MIN_HEIGHT;
 }
+
+function getMax() {
+  return Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, parentHeight() - MIN_EDITOR_AREA));
+}
+
+const { value: height, dragging, atMax, onPointerDown, onKeydown } = usePanelResize({
+  storageKey: STORAGE_KEY,
+  axis: "y",
+  getMin,
+  getMax,
+  defaultValue: () => 160,
+});
 
 const command = computed(() => props.result?.command ?? "");
 
@@ -65,44 +77,27 @@ async function copyCommand() {
     /* 剪贴板不可用时静默 */
   }
 }
-
-function onPointerDown(event: PointerEvent) {
-  dragging.value = true;
-  (event.target as HTMLElement).setPointerCapture?.(event.pointerId);
-}
-
-function onPointerMove(event: PointerEvent) {
-  if (!dragging.value) return;
-  height.value = clamp(window.innerHeight - event.clientY);
-}
-
-function onPointerUp() {
-  if (!dragging.value) return;
-  dragging.value = false;
-  localStorage.setItem(STORAGE_KEY, String(height.value));
-}
-
-/** 窗口收缩时重 clamp（持久化的极端高度跨会话/跨窗口尺寸不残留） */
-function onWindowResize() {
-  height.value = clamp(height.value);
-}
-
-onMounted(() => {
-  window.addEventListener("pointermove", onPointerMove);
-  window.addEventListener("pointerup", onPointerUp);
-  window.addEventListener("resize", onWindowResize);
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener("pointermove", onPointerMove);
-  window.removeEventListener("pointerup", onPointerUp);
-  window.removeEventListener("resize", onWindowResize);
-});
 </script>
 
 <template>
-  <aside class="log-panel" :style="{ height: `${height}px` }">
-    <div class="handle" @pointerdown="onPointerDown" />
+  <aside
+    ref="rootEl"
+    class="log-panel"
+    :style="{ height: `${height}px` }"
+  >
+    <div
+      class="handle"
+      :class="{ dragging, atMax }"
+      role="separator"
+      aria-orientation="horizontal"
+      tabindex="0"
+      :aria-label="t('scripts.logResize')"
+      :aria-valuenow="height"
+      :aria-valuemin="MIN_HEIGHT"
+      :aria-valuemax="MAX_HEIGHT"
+      @pointerdown="onPointerDown"
+      @keydown="onKeydown"
+    />
     <header class="head">
       <h3>{{ t("scripts.logTitle") }}</h3>
       <span
@@ -126,6 +121,7 @@ onBeforeUnmount(() => {
 .log-panel {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   min-height: 96px;
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -133,14 +129,23 @@ onBeforeUnmount(() => {
 
 .handle {
   height: 6px;
+  flex-shrink: 0;
   cursor: ns-resize;
   touch-action: none;
   user-select: none;
+  outline: none;
   background: color-mix(in srgb, var(--border) 70%, transparent);
 }
 
-.handle:hover {
+.handle:hover,
+.handle:focus-visible,
+.handle.dragging {
   background: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* 已到可拖上限——与 hover 区分，提示「到顶」而非失灵 */
+.handle.atMax {
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .head {
