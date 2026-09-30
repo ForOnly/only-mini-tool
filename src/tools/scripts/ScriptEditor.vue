@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { useAppearance } from "@/composables/useAppearance";
+import { useMessage } from "@/composables/useMessage";
 import type { ScriptParamDef } from "@/api/types";
 import { formatScriptCode } from "@/api/scripts";
+import { formatAppError } from "@/utils/error";
 
 // worker 与环境必须先于 monaco.create 就绪（静态赋值，不依赖 monaco 命名空间）
 self.MonacoEnvironment = {
@@ -57,8 +60,9 @@ const PY_SNIPPETS: Array<[string, string, string]> = [
   ],
 ];
 
-/** 首次动态加载后注册 providers（幂等）：关键字/片段 + params 字段 + black 格式化。 */
-function registerProviders(m: MonacoModule) {
+/** 首次动态加载后注册 providers（幂等）：关键字/片段 + params 字段 + black 格式化。
+ * onError：setup 注入的错误回调（格式化失败可见化——模块级函数取不到 useMessage 上下文）。 */
+function registerProviders(m: MonacoModule, onError: (err: unknown) => void) {
   if (providersRegistered) return;
   providersRegistered = true;
 
@@ -138,15 +142,15 @@ function registerProviders(m: MonacoModule) {
     },
   });
 
-  // 格式化：后端 black（全局解释器子链），provider 收 model 即自包含
+  // 格式化：后端 black（全局解释器子链）。失败（未装 black 等）经 onError 弹出——
+  // 静默 return null 会让用户以为格式化「无效」
   m.languages.registerDocumentFormattingEditProvider("python", {
     async provideDocumentFormattingEdits(model) {
       let formatted: string;
       try {
         formatted = await formatScriptCode(model.getValue());
       } catch (err) {
-        // 格式化失败（未装 black 等）不阻塞编辑——弹全局消息由调用侧? provider 内无 toast 通道，静默保持原文
-        void err;
+        onError(err);
         return null;
       }
       return [
@@ -157,6 +161,7 @@ function registerProviders(m: MonacoModule) {
       ];
     },
   });
+  console.debug("[monaco] providers registered: params+keywords+format");
 }
 
 /** 懒加载 monaco（裁剪入口：editor.api + 仅 python 语言贡献——css/html/json/ts 语言块不进产物）。 */
@@ -181,9 +186,12 @@ const emit = defineEmits<{
 }>();
 
 const host = ref<HTMLDivElement | null>(null);
+const loadError = ref<string | null>(null);
 let editor: import("monaco-editor/esm/vs/editor/editor.api").editor.IStandaloneCodeEditor | null =
   null;
 const { appearance } = useAppearance();
+const { error: errorMessage } = useMessage();
+const { t } = useI18n();
 
 function defineThemes(m: MonacoModule) {
   m.editor.defineTheme("only-light", {
@@ -202,11 +210,13 @@ function defineThemes(m: MonacoModule) {
 
 onMounted(async () => {
   if (!host.value) return;
-  const m = await loadMonaco();
-  registerProviders(m);
-  defineThemes(m);
-  const scheme = appearance.value?.resolved ?? "light";
-  editor = m.editor.create(host.value, {
+  // 动态链任一环节失败：显式暴露（Vue 吞 async onMounted 错误——不 catch 即静默空白）
+  try {
+    const m = await loadMonaco();
+    registerProviders(m, (err) => errorMessage(formatAppError(err, (k) => t(k))));
+    defineThemes(m);
+    const scheme = appearance.value?.resolved ?? "light";
+    editor = m.editor.create(host.value, {
     value: props.modelValue,
     language: "python",
     automaticLayout: true,
@@ -214,6 +224,9 @@ onMounted(async () => {
     fontSize: 13,
     theme: scheme === "dark" ? "only-dark" : "only-light",
     scrollBeyondLastLine: false,
+    // 补全显式触发（防默认漂移）：字母输入弹出 + `params.` 的 `.` 触发
+    quickSuggestions: { other: true, comments: false, strings: false },
+    suggestOnTriggerCharacters: true,
     // Monaco 自绘 DOM 滚动条不吃 CSS 伪元素，走 option 对齐全局滚动条
     scrollbar: {
       verticalScrollbarSize: 10, // 对齐 --scrollbar-size
@@ -230,12 +243,16 @@ onMounted(async () => {
     smoothScrolling: true,
     padding: { top: 8 },
     renderWhitespace: "selection",
-  });
-  editor.onDidChangeModelContent(() => {
-    emit("update:modelValue", editor?.getValue() ?? "");
-  });
-  // Ctrl+S → 保存（与 RunBar 保存同函数）
-  editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => emit("save"));
+    });
+    editor.onDidChangeModelContent(() => {
+      emit("update:modelValue", editor?.getValue() ?? "");
+    });
+    // Ctrl+S → 保存（与 RunBar 保存同函数）
+    editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, () => emit("save"));
+  } catch (err) {
+    console.error("[monaco] load/register failed:", err);
+    loadError.value = String(err);
+  }
 });
 
 watch(
@@ -282,7 +299,8 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="host" class="editor-host" />
+  <div v-if="loadError" class="editor-error">Monaco {{ t("scripts.editorLoadFailed") }}: {{ loadError }}</div>
+  <div v-show="!loadError" ref="host" class="editor-host" />
 </template>
 
 <style scoped>
@@ -290,5 +308,12 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
+}
+
+.editor-error {
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--warning, #c47f17);
+  word-break: break-all;
 }
 </style>

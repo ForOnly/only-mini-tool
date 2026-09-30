@@ -150,6 +150,7 @@ export default {
     logTitle: "Run log",
     logEmpty: "Not run yet.",
     logResize: "Resize log panel height",
+    editorLoadFailed: "editor failed to load",
     leftResize: "Resize left panel width",
     runRunning: "Running…",
     runCancelled: "Cancelled",

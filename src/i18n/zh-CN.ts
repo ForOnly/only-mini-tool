@@ -148,6 +148,7 @@ export default {
     logTitle: "运行日志",
     logEmpty: "尚未运行。",
     logResize: "调节日志面板高度",
+    editorLoadFailed: "编辑器加载失败",
     leftResize: "调节左栏宽度",
     runRunning: "运行中…",
     runCancelled: "已取消",
