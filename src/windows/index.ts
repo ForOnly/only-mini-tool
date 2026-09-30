@@ -4,6 +4,7 @@
 import { markRaw } from "vue";
 import type { Component } from "vue";
 
+import EditorWindowApp from "./EditorWindowApp.vue";
 import TerminalWindowApp from "./TerminalWindowApp.vue";
 
 export interface ChildWindowSpec {
@@ -27,6 +28,18 @@ export function resolveChildWindow(query: URLSearchParams): ChildWindowSpec | nu
       title: "Terminal",
       component: markRaw(TerminalWindowApp),
       props: { sessionIds, titles },
+    };
+  }
+  if (kind === "editor") {
+    const scriptId = Number(query.get("scriptId") ?? "");
+    if (!Number.isFinite(scriptId) || scriptId <= 0) {
+      console.warn("[childWindow] editor window missing scriptId");
+      return null;
+    }
+    return {
+      title: "Editor",
+      component: markRaw(EditorWindowApp),
+      props: { scriptId },
     };
   }
   console.warn("[childWindow] unknown window kind:", kind);

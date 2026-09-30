@@ -14,6 +14,7 @@ const emit = defineEmits<{
   save: [];
   run: [];
   cancel: [];
+  popout: [];
 }>();
 
 const { t } = useI18n();
@@ -40,6 +41,39 @@ const { t } = useI18n();
         />
         <path
           d="M4 9h10.5a5.5 5.5 0 0 1 0 11H14"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </AppButton>
+    <AppButton
+      variant="ghost"
+      type="button"
+      class="icon-btn"
+      :title="t('scripts.popOutEditor')"
+      :aria-label="t('scripts.popOutEditor')"
+      @click="emit('popout')"
+    >
+      <!-- Lucide ExternalLink 形 -->
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="icon">
+        <path
+          d="M15 3h6v6"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M10 14L21 3"
+          stroke="currentColor"
+          stroke-width="1.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <path
+          d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
           stroke="currentColor"
           stroke-width="1.5"
           stroke-linecap="round"

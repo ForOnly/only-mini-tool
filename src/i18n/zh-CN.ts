@@ -118,6 +118,7 @@ export default {
     deleteConfirmTitle: "删除脚本？",
     deleteConfirmMessage: "将永久删除「{name}」，不可恢复。",
     backToList: "返回列表",
+    popOutEditor: "拖出编辑器",
     save: "保存",
     saved: "已保存",
     discard: "丢弃",
@@ -203,6 +204,7 @@ export default {
   },
   editor: {
     loadFailed: "编辑器加载失败",
+    windowTitle: "编辑器",
   },
   terminal: {
     tabTitle: "终端",

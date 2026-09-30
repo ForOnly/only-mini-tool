@@ -119,6 +119,7 @@ export default {
     deleteConfirmTitle: "Delete script?",
     deleteConfirmMessage: "Permanently delete “{name}”. This cannot be undone.",
     backToList: "Back to list",
+    popOutEditor: "Pop out editor",
     save: "Save",
     saved: "Saved",
     discard: "Discard",
@@ -208,6 +209,7 @@ export default {
   },
   editor: {
     loadFailed: "Editor failed to load",
+    windowTitle: "Editor",
   },
   terminal: {
     tabTitle: "Terminal",

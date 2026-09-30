@@ -12,6 +12,7 @@ import { listScriptVenvs } from "@/api/scripts";
 import type { ScriptVenvSummary } from "@/api/types";
 import { useMessage } from "@/composables/useMessage";
 import { useWorkbench } from "@/composables/useWorkbench";
+import { openChildWindow } from "@/platform/childWindow";
 import { usePanelResize } from "@/tools/scripts/usePanelResize";
 import { useScriptRun } from "@/tools/scripts/useScriptRun";
 import { useScripts } from "@/tools/scripts/useScripts";
@@ -181,6 +182,31 @@ async function onCancel() {
   }
 }
 
+/** 拖出编辑器子窗口：脏则先保存（对齐运行前保存语义），同脚本聚焦已有窗口。
+ *  已知限制：与主窗并行编辑为 last-save-wins（无跨窗同步）。 */
+async function onPopOutEditor() {
+  if (!draft.value) return;
+  try {
+    if (dirty.value) {
+      saving.value = true;
+      try {
+        await save();
+      } finally {
+        saving.value = false;
+      }
+    }
+    const id = scriptIdNum(draft.value.id);
+    await openChildWindow({
+      kind: "editor",
+      label: `editor-script-${id}`,
+      title: draft.value.name,
+      params: { scriptId: String(id) },
+    });
+  } catch (err) {
+    report(err);
+  }
+}
+
 /** 状态文字（未保存 · 计时器）——LogPanel 头部唯一持久状态位 */
 const now = ref(Date.now());
 let statusTimer: number | undefined;
@@ -223,6 +249,7 @@ const statusText = computed(() => {
           @save="onSave"
           @run="onRun"
           @cancel="onCancel"
+          @popout="onPopOutEditor"
         />
         <div class="left-scroll" data-scrollbar="thin">
           <ScriptMetaPanel v-model:draft="leftDraft" :venvs="venvs" />
