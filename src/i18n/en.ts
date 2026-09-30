@@ -222,6 +222,10 @@ export default {
     sessionClosed: "Session closed",
     windowTitle: "Terminal — {name}",
     popOutNotReady: "Terminal sessions are not ready yet — try again shortly",
+    copy: "Copy",
+    paste: "Paste",
+    clear: "Clear",
+    retry: "Retry",
   },
   errors: {
     unknown: "Unknown error",

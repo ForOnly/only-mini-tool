@@ -217,6 +217,10 @@ export default {
     sessionClosed: "会话已关闭",
     windowTitle: "终端 — {name}",
     popOutNotReady: "终端会话尚未就绪，稍后再试",
+    copy: "复制",
+    paste: "粘贴",
+    clear: "清屏",
+    retry: "重试",
   },
   errors: {
     unknown: "未知错误",

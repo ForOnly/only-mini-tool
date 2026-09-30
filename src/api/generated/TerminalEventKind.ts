@@ -2,6 +2,7 @@
 
 /**
  * Channel 消息类型：Replay（attach 时 scrollback 回放）/ Output（增量输出）/
- * Exit（shell 退出，exit_code 可能未就绪）/ Error（预留）。
+ * Exit（shell 退出，exit_code 可能未就绪）/ Resize（PTY 尺寸变化——采纳式
+ * 同步：接收方对齐显示尺寸且不回发，防乒乓）/ Error（预留）。
  */
-export type TerminalEventKind = "replay" | "output" | "exit" | "error";
+export type TerminalEventKind = "replay" | "output" | "exit" | "resize" | "error";

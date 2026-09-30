@@ -266,7 +266,20 @@ impl TerminalSession {
             })
             .map_err(|e| AppError::TerminalIo {
                 message: format!("pty resize: {e}"),
-            })
+            })?;
+        // 采纳式同步广播：同会话其他视图对齐显示尺寸（接收方不回发，防乒乓）
+        let event = TerminalEvent {
+            kind: TerminalEventKind::Resize,
+            data: String::new(),
+            exit_code: None,
+            cols: Some(cols),
+            rows: Some(rows),
+        };
+        self.subscribers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|sub| sub.channel.send(event.clone()).is_ok());
+        Ok(())
     }
 
     /// 附着：持订阅锁快照回放 → 注册订阅（与 broadcaster 广播互斥，无间隙且不重复）。
@@ -283,12 +296,16 @@ impl TerminalSession {
             kind: TerminalEventKind::Replay,
             data: replay,
             exit_code: None,
+            cols: None,
+            rows: None,
         });
         if self.exited.load(Ordering::Acquire) {
             let _ = channel.send(TerminalEvent {
                 kind: TerminalEventKind::Exit,
                 data: String::new(),
                 exit_code: self.current_exit_code(),
+                cols: None,
+                rows: None,
             });
         }
         subs.push(Subscriber {
@@ -399,6 +416,8 @@ impl TerminalSession {
             kind: TerminalEventKind::Output,
             data: text,
             exit_code: None,
+            cols: None,
+            rows: None,
         };
         // 发送失败（webview 已销毁）即剪枝该订阅
         subs.retain(|sub| sub.channel.send(event.clone()).is_ok());
@@ -421,6 +440,8 @@ impl TerminalSession {
             kind: TerminalEventKind::Exit,
             data: String::new(),
             exit_code,
+            cols: None,
+            rows: None,
         };
         self.subscribers
             .lock()

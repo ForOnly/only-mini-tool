@@ -3,13 +3,15 @@
  *  生命周期语义（D3）：unmount 只 detach（会话保留，重挂回放）；
  *  显式关闭（disposeSession/restart）才销毁会话。 */
 
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Channel } from "@tauri-apps/api/core";
 import type { Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 
 import AppButton from "@/components/common/AppButton.vue";
+import AppContextMenu from "@/components/common/AppContextMenu.vue";
+import type { ContextMenuItem } from "@/components/common/contextMenuTypes";
 import { terminalAttach, terminalDetach, terminalDispose, terminalResize, terminalWrite } from "@/api/terminal";
 import type { ColorScheme, TerminalCreatePayload, TerminalEvent } from "@/api/types";
 import { useAppearance } from "@/composables/useAppearance";
@@ -63,6 +65,17 @@ function scheme(): ColorScheme {
 function onEvent(event: TerminalEvent) {
   if (event.kind === "replay" || event.kind === "output") {
     term?.write(event.data);
+  } else if (event.kind === "resize") {
+    // 采纳式同步：对齐共享 PTY 的尺寸且不回发（防乒乓；fitNow 差异比对天然兼容）
+    if (event.cols != null && event.rows != null && term) {
+      try {
+        term.resize(event.cols, event.rows);
+        lastCols = event.cols;
+        lastRows = event.rows;
+      } catch {
+        // 布局未就绪——下次 fit 校正
+      }
+    }
   } else if (event.kind === "exit") {
     exited.value = true;
     exitCode.value = event.exitCode ?? null;
@@ -72,6 +85,80 @@ function onEvent(event: TerminalEvent) {
     }
     emit("exited", exitCode.value);
   }
+}
+
+/** 剪贴板读取（WebView2 权限被拒时告警——降级路径见右键菜单提示）。 */
+async function readClipboard(): Promise<string | null> {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    console.warn("[terminal] clipboard read denied");
+    return null;
+  }
+}
+
+async function copySelection(terminal: Terminal) {
+  const text = terminal.getSelection();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* 剪贴板不可用时静默 */
+  }
+  terminal.clearSelection();
+}
+
+async function pasteFromClipboard(terminal: Terminal) {
+  const text = await readClipboard();
+  if (text) terminal.paste(text);
+}
+
+/** 智能复制粘贴：Ctrl+C 有选区=复制（无选区=放行发 ^C 中断）；Ctrl+V 粘贴。 */
+function attachKeyHandlers(terminal: Terminal) {
+  terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+    if (event.type !== "keydown") return true;
+    const ctrl = event.ctrlKey || event.metaKey;
+    if (!ctrl) return true;
+    const key = event.key.toLowerCase();
+    if (key === "c" && !event.shiftKey) {
+      if (terminal.hasSelection()) {
+        void copySelection(terminal);
+        return false;
+      }
+      return true;
+    }
+    if (key === "v") {
+      void pasteFromClipboard(terminal);
+      return false;
+    }
+    return true;
+  });
+}
+
+/** 终端右键菜单（全局 contextmenu 守卫在容器层 stop + 自有菜单）。 */
+const menuOpen = ref(false);
+const menuX = ref(0);
+const menuY = ref(0);
+
+const menuItems = computed<ContextMenuItem[]>(() => [
+  { id: "copy", label: t("terminal.copy"), disabled: !term?.hasSelection() },
+  { id: "paste", label: t("terminal.paste") },
+  { id: "clear", label: t("terminal.clear") },
+]);
+
+function onContextMenu(event: MouseEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  menuX.value = event.clientX;
+  menuY.value = event.clientY;
+  menuOpen.value = true;
+}
+
+function onMenuSelect(id: string) {
+  if (!term) return;
+  if (id === "copy") void copySelection(term);
+  else if (id === "paste") void pasteFromClipboard(term);
+  else if (id === "clear") term.clear();
 }
 
 /** fit + 尺寸同步（隐藏时跳过；重新可见时 ResizeObserver 会补一次）。 */
@@ -141,6 +228,7 @@ async function boot() {
       return;
     }
     sessionId = id;
+    attachKeyHandlers(terminal);
     const ch = new Channel<TerminalEvent>();
     ch.onmessage = onEvent;
     attachId = await terminalAttach(id, ch);
@@ -204,13 +292,21 @@ function focus() {
   term?.focus();
 }
 
+/** 加载失败重试（boot 非破坏性重启——无需销毁会话）。 */
+function retry() {
+  void boot();
+}
+
 defineExpose({ focus, restart });
 </script>
 
 <template>
-  <div class="terminal-view">
+  <div class="terminal-view" @contextmenu="onContextMenu">
     <div v-if="loadError" class="state" data-scrollbar="thin">
-      {{ t("terminal.loadFailed") }}: {{ loadError }}
+      <span>{{ loadError }}</span>
+      <AppButton variant="ghost" type="button" @click="retry">
+        {{ t("terminal.retry") }}
+      </AppButton>
     </div>
     <template v-else>
       <div ref="host" class="host" />
@@ -227,6 +323,14 @@ defineExpose({ focus, restart });
         </AppButton>
       </div>
     </template>
+    <AppContextMenu
+      :open="menuOpen"
+      :x="menuX"
+      :y="menuY"
+      :items="menuItems"
+      @close="menuOpen = false"
+      @select="onMenuSelect"
+    />
   </div>
 </template>
 
@@ -238,16 +342,20 @@ defineExpose({ focus, restart });
   width: 100%;
   height: 100%;
   min-height: 0;
+  /* padding 在容器层：fit-addon 量测的 .host 不含 padding，列数不再偏大 */
+  padding: var(--space-2);
   background: var(--surface);
 }
 
 .host {
   flex: 1;
   min-height: 0;
-  padding: var(--space-2);
 }
 
 .state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-3);
   font-size: var(--text-sm);
   color: var(--warning, #c47f17);

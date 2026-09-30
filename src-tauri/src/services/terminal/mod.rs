@@ -129,12 +129,10 @@ impl TerminalRegistry {
             }
         }
 
-        let spawn_cfg = shell::spawn_command(&kind);
-        let init_commands = {
-            let mut cmds = shell::default_init_commands(&kind, venv_ref);
-            cmds.extend(payload.init_commands.clone().unwrap_or_default());
-            cmds
-        };
+        let spawn_cfg = shell::spawn_command(&kind, venv_ref);
+        // 编码/提示符经启动参数注入（零回显）；init_commands 仅剩用户自定义
+        // （会以敲入形式回显——显式 opt-in，文档注明）
+        let init_commands = payload.init_commands.clone().unwrap_or_default();
 
         TerminalSession::spawn(SessionSpawn {
             program: spawn_cfg.program,

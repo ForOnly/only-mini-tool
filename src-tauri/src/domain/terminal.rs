@@ -60,7 +60,8 @@ pub struct TerminalInfo {
 }
 
 /// Channel 消息类型：Replay（attach 时 scrollback 回放）/ Output（增量输出）/
-/// Exit（shell 退出，exit_code 可能未就绪）/ Error（预留）。
+/// Exit（shell 退出，exit_code 可能未就绪）/ Resize（PTY 尺寸变化——采纳式
+/// 同步：接收方对齐显示尺寸且不回发，防乒乓）/ Error（预留）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export, rename_all = "lowercase")]
@@ -68,6 +69,7 @@ pub enum TerminalEventKind {
     Replay,
     Output,
     Exit,
+    Resize,
     Error,
 }
 
@@ -81,6 +83,14 @@ pub struct TerminalEvent {
     #[serde(default)]
     #[ts(optional)]
     pub exit_code: Option<i32>,
+    /// Resize 事件的列数
+    #[serde(default)]
+    #[ts(optional)]
+    pub cols: Option<u16>,
+    /// Resize 事件的行数
+    #[serde(default)]
+    #[ts(optional)]
+    pub rows: Option<u16>,
 }
 
 /// 脚本编辑页终端预设（复用 run 的 cwd/venv 解析链）。

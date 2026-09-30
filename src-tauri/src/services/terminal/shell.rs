@@ -71,26 +71,65 @@ pub struct ShellSpawn {
     pub args: Vec<String>,
 }
 
-/// shell 可执行与启动参数（PowerShell 系加 -NoLogo 抑制横幅）。
-pub fn spawn_command(kind: &ShellKind) -> ShellSpawn {
+/// shell 启动命令与参数：编码统一 + venv 徽标提示符经**启动参数**注入
+/// （零 stdin 写入 = 零回显、零 400ms 拼接竞态）。
+/// PowerShell 系用 `-EncodedCommand`（base64 UTF-16LE，彻底绕开引号/花括号
+/// 转义，venv 名特殊字符也安全）；cmd 用 `/k`（命令本身不回显）。
+pub fn spawn_command(kind: &ShellKind, venv_name: Option<&str>) -> ShellSpawn {
     match kind {
         ShellKind::Pwsh => ShellSpawn {
             program: PathBuf::from("pwsh.exe"),
-            args: vec!["-NoLogo".into()],
+            args: ps_args(venv_name),
         },
         ShellKind::Powershell => ShellSpawn {
             program: PathBuf::from("powershell.exe"),
-            args: vec!["-NoLogo".into()],
+            args: ps_args(venv_name),
         },
         ShellKind::Cmd => ShellSpawn {
             program: PathBuf::from("cmd.exe"),
-            args: vec![],
+            args: vec!["/k".into(), "@chcp 65001>nul".into()],
         },
         ShellKind::Custom(path) => ShellSpawn {
             program: path.clone(),
             args: vec![],
         },
     }
+}
+
+fn ps_args(venv_name: Option<&str>) -> Vec<String> {
+    vec![
+        "-NoLogo".into(),
+        "-NoExit".into(),
+        "-EncodedCommand".into(),
+        encode_ps_bootstrap(venv_name),
+    ]
+}
+
+/// PowerShell 引导脚本（编码统一 + venv 徽标提示符）。
+/// InputEncoding 在输入已重定向的场景会抛异常——try/catch 包裹（已知怪癖）。
+/// 已知残余：用户 profile 仍先执行，可能覆盖编码设置（应用层不静改 profile）。
+fn ps_bootstrap(venv_name: Option<&str>) -> String {
+    let mut script = String::from(
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8\ntry{[Console]::InputEncoding=[Text.Encoding]::UTF8}catch{}",
+    );
+    if let Some(name) = venv_name {
+        // venv 徽标提示符（覆盖全局 prompt；写 global: 保证跨作用域生效）
+        script.push_str(&format!(
+            "\nfunction global:prompt {{ \"({name}) $($PWD)> \" }}"
+        ));
+    }
+    script
+}
+
+/// UTF-16LE + Base64 编码（-EncodedCommand 载荷格式）。
+pub fn encode_ps_bootstrap(venv_name: Option<&str>) -> String {
+    let script = ps_bootstrap(venv_name);
+    let mut bytes = Vec::with_capacity(script.len() * 2);
+    for unit in script.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
 /// 全量继承当前进程环境，再叠加覆盖项（显式继承不依赖 CommandBuilder 的默认语义）。
@@ -144,27 +183,6 @@ pub fn venv_env_with_path(
     ])
 }
 
-/// 默认 init commands：编码统一 + （PowerShell）venv 提示符徽标。
-/// 均为内联命令，不执行 .ps1 文件（不受 ExecutionPolicy 限制）。
-pub fn default_init_commands(kind: &ShellKind, venv_name: Option<&str>) -> Vec<String> {
-    match kind {
-        ShellKind::Cmd => vec!["@chcp 65001>nul".to_string()],
-        ShellKind::Pwsh | ShellKind::Powershell => {
-            let mut cmds = vec![
-                "[Console]::OutputEncoding=[Text.Encoding]::UTF8".to_string(),
-            ];
-            if let Some(name) = venv_name {
-                // venv 徽标提示符（覆盖全局 prompt；写 global: 保证跨作用域生效）
-                cmds.push(format!(
-                    "function global:prompt {{ \"({name}) $($PWD)> \" }}"
-                ));
-            }
-            cmds
-        }
-        ShellKind::Custom(_) => vec![],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,20 +219,41 @@ mod tests {
     }
 
     #[test]
-    fn spawn_command_flags() {
-        assert_eq!(spawn_command(&ShellKind::Pwsh).args, vec!["-NoLogo"]);
-        assert!(spawn_command(&ShellKind::Cmd).args.is_empty());
+    fn spawn_command_uses_launch_args() {
+        let ps = spawn_command(&ShellKind::Pwsh, None);
+        assert_eq!(ps.args[0], "-NoLogo");
+        assert_eq!(ps.args[1], "-NoExit");
+        assert_eq!(ps.args[2], "-EncodedCommand");
+        // cmd 走 /k，无 stdin 注入
+        let cmd = spawn_command(&ShellKind::Cmd, Some("dev"));
+        assert_eq!(cmd.args, vec!["/k", "@chcp 65001>nul"]);
+        // custom 不注入
+        assert!(spawn_command(&ShellKind::Custom(PathBuf::from("sh")), None).args.is_empty());
     }
 
     #[test]
-    fn init_commands_cover_encoding() {
-        assert_eq!(
-            default_init_commands(&ShellKind::Cmd, None),
-            vec!["@chcp 65001>nul"]
-        );
-        let ps = default_init_commands(&ShellKind::Powershell, Some("dev"));
-        assert_eq!(ps.len(), 2);
-        assert!(ps[0].contains("OutputEncoding"));
-        assert!(ps[1].contains("\"(dev)"));
+    fn ps_bootstrap_encoding_roundtrip() {
+        use base64::Engine as _;
+        for venv in [None, Some("dev"), Some("a-b_9")] {
+            let encoded = encode_ps_bootstrap(venv);
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&encoded)
+                .expect("valid base64");
+            // UTF-16LE 解回
+            let units: Vec<u16> = bytes
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
+            let script = String::from_utf16(&units).expect("utf-16 roundtrip");
+            assert!(script.contains("[Console]::OutputEncoding=[Text.Encoding]::UTF8"));
+            assert!(script.contains("[Console]::InputEncoding"));
+            match venv {
+                Some(name) => assert!(
+                    script.contains(&format!("({name})")),
+                    "venv badge in prompt: {name}"
+                ),
+                None => assert!(!script.contains("function global:prompt")),
+            }
+        }
     }
 }
