@@ -68,7 +68,21 @@ pub fn run() {
             commands::delete_script_venv,
             commands::install_script_venv_packages,
             commands::format_script_code,
+            commands::terminal_create,
+            commands::terminal_attach,
+            commands::terminal_detach,
+            commands::terminal_write,
+            commands::terminal_resize,
+            commands::terminal_dispose,
+            commands::terminal_list,
+            commands::resolve_script_terminal,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // app 退出：杀全部终端会话进程树（防 conhost/shell 残留）
+            if let tauri::RunEvent::Exit = event {
+                services::terminal::TerminalRegistry::global().dispose_all();
+            }
+        });
 }

@@ -88,6 +88,7 @@ pub struct OcrResult {
 pub mod ocr_settings;
 pub mod script;
 pub mod settings;
+pub mod terminal;
 
 pub use ocr_settings::{
     OcrEngineFieldInfo, OcrEngineInfo, OcrFieldKind, OcrSettingsBundle, OcrSettingsSave,
@@ -96,6 +97,9 @@ pub use script::{
     ScriptArgsTemplate, ScriptCreate, ScriptDto, ScriptParamDef, ScriptParamPassAs,
     ScriptParamType, ScriptPathMode, ScriptRunRequest, ScriptRunResult, ScriptSummary,
     ScriptUpdate, ScriptVenvSummary, ScriptsSettingsBundle, ScriptsSettingsSave,
+};
+pub use terminal::{
+    ScriptTerminalConfig, TerminalCreatePayload, TerminalEvent, TerminalEventKind, TerminalInfo,
 };
 pub use settings::{
     engine_setting_key, parse_inspector_placement, DEFAULT_OCR_ACTIVE_ENGINE,
@@ -134,6 +138,11 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
     ScriptVenvSummary::export_all().expect("export ScriptVenvSummary");
     ScriptRunRequest::export_all().expect("export ScriptRunRequest");
     ScriptRunResult::export_all().expect("export ScriptRunResult");
+    TerminalCreatePayload::export_all().expect("export TerminalCreatePayload");
+    TerminalInfo::export_all().expect("export TerminalInfo");
+    TerminalEventKind::export_all().expect("export TerminalEventKind");
+    TerminalEvent::export_all().expect("export TerminalEvent");
+    ScriptTerminalConfig::export_all().expect("export ScriptTerminalConfig");
 
     let bindings = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("bindings");
     let alt_bindings = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bindings");
@@ -164,6 +173,11 @@ pub fn export_all_ts(out_dir: &std::path::Path) {
         "ScriptVenvSummary.ts",
         "ScriptRunRequest.ts",
         "ScriptRunResult.ts",
+        "TerminalCreatePayload.ts",
+        "TerminalInfo.ts",
+        "TerminalEventKind.ts",
+        "TerminalEvent.ts",
+        "ScriptTerminalConfig.ts",
     ] {
         let src = if bindings.join(name).exists() {
             bindings.join(name)
@@ -200,6 +214,11 @@ export type { ScriptsSettingsSave } from "./ScriptsSettingsSave";
 export type { ScriptVenvSummary } from "./ScriptVenvSummary";
 export type { ScriptRunRequest } from "./ScriptRunRequest";
 export type { ScriptRunResult } from "./ScriptRunResult";
+export type { TerminalCreatePayload } from "./TerminalCreatePayload";
+export type { TerminalInfo } from "./TerminalInfo";
+export type { TerminalEventKind } from "./TerminalEventKind";
+export type { TerminalEvent } from "./TerminalEvent";
+export type { ScriptTerminalConfig } from "./ScriptTerminalConfig";
 "#;
     std::fs::write(out_dir.join("index.ts"), index).expect("write index.ts");
 }

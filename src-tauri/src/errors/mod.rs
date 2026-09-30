@@ -47,6 +47,15 @@ pub enum AppError {
 
     #[error("{message}")]
     ScriptsBusy { message: String },
+
+    #[error("{message}")]
+    TerminalSpawn { message: String },
+
+    #[error("{message}")]
+    TerminalNotFound { message: String },
+
+    #[error("{message}")]
+    TerminalIo { message: String },
 }
 
 impl Serialize for AppError {
@@ -71,6 +80,9 @@ impl Serialize for AppError {
             AppError::OcrBusy { message } => ("ocr.busy", message.as_str()),
             AppError::OcrCancelled { message } => ("ocr.cancelled", message.as_str()),
             AppError::ScriptsBusy { message } => ("scripts.busy", message.as_str()),
+            AppError::TerminalSpawn { message } => ("terminal.spawn_failed", message.as_str()),
+            AppError::TerminalNotFound { message } => ("terminal.not_found", message.as_str()),
+            AppError::TerminalIo { message } => ("terminal.io_failed", message.as_str()),
         };
 
         let mut state = serializer.serialize_struct("AppError", 2)?;

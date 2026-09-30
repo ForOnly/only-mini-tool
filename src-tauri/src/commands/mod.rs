@@ -13,6 +13,10 @@ use crate::services::scripts::ScriptsService;
 use crate::services::settings_service::SettingsService;
 use crate::state::AppState;
 
+pub mod terminal;
+
+pub use terminal::*;
+
 #[tauri::command]
 pub fn get_setting(state: State<'_, AppState>, key: String) -> Result<Option<String>, AppError> {
     SettingsService::get(&state.db, &key)

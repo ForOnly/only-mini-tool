@@ -23,3 +23,8 @@ export type { ScriptsSettingsSave } from "./ScriptsSettingsSave";
 export type { ScriptVenvSummary } from "./ScriptVenvSummary";
 export type { ScriptRunRequest } from "./ScriptRunRequest";
 export type { ScriptRunResult } from "./ScriptRunResult";
+export type { TerminalCreatePayload } from "./TerminalCreatePayload";
+export type { TerminalInfo } from "./TerminalInfo";
+export type { TerminalEventKind } from "./TerminalEventKind";
+export type { TerminalEvent } from "./TerminalEvent";
+export type { ScriptTerminalConfig } from "./ScriptTerminalConfig";

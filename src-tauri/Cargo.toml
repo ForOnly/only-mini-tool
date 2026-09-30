@@ -33,6 +33,7 @@ base64 = "0.22"
 arboard = "3"
 uuid = { version = "1", features = ["v4"] }
 keyring = { version = "3", features = ["windows-native"] }
+portable-pty = "0.8"
 
 [[bin]]
 name = "export-ts"

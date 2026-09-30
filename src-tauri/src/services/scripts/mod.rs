@@ -36,6 +36,18 @@ use crate::services::settings_service::SettingsService;
 /// 单次运行硬编码超时（不进 settings，Won't：scripts.timeout_ms）。
 const RUN_TIMEOUT_SECS: u64 = 300;
 
+/// cwd + venv 候选链解析结果（run 与终端共用）。
+pub struct ResolvedRunTarget {
+    /// 生效工作目录
+    pub cwd: PathBuf,
+    /// 脚本绑定的 venv 引用（原始名；未绑定为 None——即使 venv 缺失也保留绑定名）
+    pub bound_venv: Option<String>,
+    /// 实际提供解释器的 venv 引用（绑定名 / 全局启用名 / ".venv"）；None = 全局 python
+    pub venv_effective: Option<String>,
+    /// 生效 venv 的解释器绝对路径（探测失败/无 venv 为 None）
+    pub venv_python: Option<String>,
+}
+
 pub struct ScriptsService;
 
 impl ScriptsService {
@@ -682,6 +694,71 @@ impl ScriptsService {
         result
     }
 
+    /// cwd + venv 候选链解析（run 与终端共用；纯解析不建目录——目录创建留在调用方，
+    /// run 路径时序不变）。链：脚本绑定 > 全局启用 > 生效 cwd 下 .venv；
+    /// 任一级指向的 venv 不存在则静默回落下级（解析容错）。
+    /// `venv_effective` 记录实际提供解释器的 venv 引用（绑定名/全局启用名/".venv"），
+    /// 供终端徽标展示；run 路径不消费。
+    pub async fn resolve_run_target(
+        app: &AppHandle,
+        db: &Database,
+        script: &ScriptDto,
+    ) -> Result<ResolvedRunTarget, AppError> {
+        let settings = Self::get_settings(db)?;
+        let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
+        let cwd = prepare::resolve_cwd(
+            script.workspace_path.as_deref(),
+            &settings.default_workspace,
+            fallback_dir,
+        );
+        let bound_venv = script
+            .venv_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        let global_venv = settings.venv.trim().to_string();
+        let (venv_effective, venv_python) = match bound_venv.as_deref() {
+            Some(".venv") => {
+                let ws = settings.default_workspace.trim();
+                if ws.is_empty() {
+                    (None, None)
+                } else {
+                    match venv_python_at(Path::new(ws)).await {
+                        Some(p) => (Some(".venv".to_string()), Some(p)),
+                        None => (None, None),
+                    }
+                }
+            }
+            Some(name) => match named_venv_python(app, name).await {
+                Some(p) => (Some(name.to_string()), Some(p)),
+                None => (None, None),
+            },
+            None => {
+                if !global_venv.is_empty() {
+                    if let Some(p) = named_venv_python(app, &global_venv).await {
+                        (Some(global_venv.clone()), Some(p))
+                    } else if let Some(p) = venv_python_at(&cwd).await {
+                        (Some(".venv".to_string()), Some(p))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    match venv_python_at(&cwd).await {
+                        Some(p) => (Some(".venv".to_string()), Some(p)),
+                        None => (None, None),
+                    }
+                }
+            }
+        };
+        Ok(ResolvedRunTarget {
+            cwd,
+            bound_venv,
+            venv_effective,
+            venv_python,
+        })
+    }
+
     async fn run_registered(
         app: &AppHandle,
         db: &Database,
@@ -702,45 +779,14 @@ impl ScriptsService {
             prepare::project_params(&script.params_schema, &effective, &settings.env_prefix);
 
         // 先解析 cwd，再探测其下 venv，最后定解释器（链：脚本覆盖 > venv > 全局）
-        let fallback_dir = scripts_run_dir(app)?.join("default-workspace");
-        let cwd = prepare::resolve_cwd(
-            script.workspace_path.as_deref(),
-            &settings.default_workspace,
-            fallback_dir,
-        );
+        let target = Self::resolve_run_target(app, db, &script).await?;
+        let cwd = target.cwd.clone();
         tokio::fs::create_dir_all(&cwd)
             .await
             .map_err(|e| AppError::InternalError {
                 message: format!("create workspace cwd: {e}"),
             })?;
-        // venv 候选：脚本绑定 > 全局启用 > 生效 cwd 下 .venv；
-        // 任一级指向的 venv 不存在则静默回落下级（解析容错）
-        let bound_venv = script
-            .venv_name
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        let venv_python = match bound_venv {
-            Some(".venv") => {
-                let ws = settings.default_workspace.trim();
-                if ws.is_empty() {
-                    None
-                } else {
-                    venv_python_at(Path::new(ws)).await
-                }
-            }
-            Some(name) => named_venv_python(app, name).await,
-            None => {
-                let global_venv = settings.venv.trim();
-                if !global_venv.is_empty() {
-                    named_venv_python(app, global_venv)
-                        .await
-                        .or(venv_python_at(&cwd).await)
-                } else {
-                    venv_python_at(&cwd).await
-                }
-            }
-        };
+        let venv_python = target.venv_python.clone();
         let interpreter =
             prepare::resolve_interpreter(venv_python.as_deref(), &settings.python_path);
         if interpreter.is_empty() {
@@ -748,7 +794,7 @@ impl ScriptsService {
                 message: "python interpreter path is empty".into(),
             });
         }
-        let run_chain = match (bound_venv, venv_python.as_deref()) {
+        let run_chain = match (target.bound_venv.as_deref(), venv_python.as_deref()) {
             (Some(name), _) => format!("script venv \"{name}\""),
             (None, Some(_)) => "global venv / workspace .venv".to_string(),
             (None, None) => "global python".to_string(),
