@@ -206,6 +206,9 @@ export default {
     templateStdin: "stdin JSON",
     templateParamsModule: "params module (recommended)",
   },
+  editor: {
+    loadFailed: "Editor failed to load",
+  },
   terminal: {
     tabTitle: "Terminal",
     newTab: "New session",

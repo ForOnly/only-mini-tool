@@ -201,6 +201,9 @@ export default {
     templateStdin: "stdin JSON",
     templateParamsModule: "参数模块（推荐）",
   },
+  editor: {
+    loadFailed: "编辑器加载失败",
+  },
   terminal: {
     tabTitle: "终端",
     newTab: "新建会话",
